@@ -14,7 +14,7 @@ EVENT_OPENING, EVENT_MAOU, EVENT_ENDING = range(3)
 
 #------------------------------------------------------------------------------
 
-class BaseSystem:
+class SystemBase:
     def __init__(self):
         self.state = 0
         pass
@@ -25,7 +25,7 @@ class BaseSystem:
     def changed(self, input_command):
         pass
 
-class Event(BaseSystem):
+class Event(SystemBase):
     FIGHT, EXIT = range(2)
     def __init__(self):
         self.state = EVENT
@@ -56,57 +56,130 @@ class Event(BaseSystem):
             pass
         return False
 
-class Battle(BaseSystem):
-    FIGHT, EXIT = range(2)
+class Battle(SystemBase):
+    B_START, B_COMMAND, B_BATTLE = range(3)
+    START_FIGHT, START_EXIT = range(2)
+    COMMAND_ATTACK, COMMAND_MAGIC, COMMAND_DEFENSE = range(3)
     def __init__(self):
         self.state = BATTLE
         self.enemy = self.enemy_create()
-        self.menu = self.FIGHT
+        #
+        self.b_state = Battle.B_START
+        self.menu = Battle.START_FIGHT
     def enemy_create(self):
-        enemy = Enemy(u"スライム", 20,10,5)
+        enemy = Enemy(u"スライム", 20,15,5, 10)
         return enemy
     def draw(self):
         #
-        for player in party.member:
-            player.show(self.state)
+        player.show(self.state)
         #
-        enemy.show()
-        # カーソルの描画
-        menus = [u"戦う",u"逃げる"]
-        if self.menu == self.FIGHT:
-            menus[0] += " * "
-        elif self.menu == self.EXIT:
-            menus[1] += " * "
-        for s in menus:
-            print(s)
+        self.enemy.show()
+        #
+        if self.b_state == Battle.B_START:
+            menus = [u"戦う",u"逃げる"]
+            if self.menu == Battle.START_FIGHT:
+                menus[0] = " * " + menus[0]
+                menus[1] = "   " + menus[1]
+            elif self.menu == Battle.START_EXIT:
+                menus[0] = "   " + menus[0]
+                menus[1] = " * " + menus[1]
+            for s in menus:
+                print(s)
+        elif self.b_state == Battle.B_COMMAND:
+            menus = [u"攻撃", u"呪文", u"防御"]
+#             menus[self.menu][2] = '*'
+            if self.menu == Battle.COMMAND_ATTACK:
+                menus[0] = " * " + menus[0]
+                menus[1] = "   " + menus[1]
+                menus[2] = "   " + menus[2]
+            elif self.menu == Battle.COMMAND_MAGIC:
+                menus[0] = "   " + menus[0]
+                menus[1] = " * " + menus[1]
+                menus[2] = "   " + menus[2]
+            elif self.menu == Battle.COMMAND_DEFENSE:
+                menus[0] = "   " + menus[0]
+                menus[1] = "   " + menus[1]
+                menus[2] = " * " + menus[2]
+            for s in menus:
+                print(s)
+        elif self.b_state == Battle.B_BATTLE:
+            pass
     def update(self):
-        pass
-    def exit():
-        pass
-    def exit():
-        pass
-    def changed(self, input_command):
-        if input_command == DOWN:
-            pass
-        elif input_command == UP:
-            pass
-        elif input_command == ENTER:
-            pass
-        elif input_command == CANCEL:
+        print u"%s の攻撃" % (self.enemy.name)
+        damage = self.enemy.attack - player.defense
+        print u"%s に %3d" % (player.name, damage)
+        player.hp -= damage
+    def escape(self):
+        r = random.randint(1,100)
+        if r < 50:
             global game
             game = game_stack.pop()
-            return True
+            print "逃げ出した"
+        else:
+            print "逃げるのに失敗した"
+        return True
+    def changed(self, input_command):
+        if input_command == DOWN:
+            if self.b_state == Battle.B_START:
+                self.menu += 1
+                self.menu %= 2
+                return True
+            elif self.b_state == Battle.B_COMMAND:
+                self.menu += 1
+                self.menu %= 3
+                return True
+        elif input_command == UP:
+            if self.b_state == Battle.B_START:
+                self.menu += (2 - 1)
+                self.menu %= 2
+                return True
+            elif self.b_state == Battle.B_COMMAND:
+                self.menu += (3 - 1)
+                self.menu %= 3
+                return True
+        elif input_command == ENTER:
+            if self.b_state == Battle.B_START:
+                if self.menu == Battle.START_FIGHT:
+                    self.b_state = Battle.B_COMMAND
+                    self.menu = 0
+                    return True
+                elif self.menu == Battle.START_EXIT:
+                    return self.escape()
+            elif self.b_state == Battle.B_COMMAND:
+                if   self.menu == Battle.COMMAND_ATTACK:
+                    return self.attack()
+                elif self.menu == Battle.COMMAND_MAGIC:
+                    return self.magic()
+                elif self.menu == Battle.COMMAND_DEFENSE:
+                    return self.defense()
+        elif input_command == CANCEL:
+            pass
         return False
+    def attack(self):
+        print u"%s の攻撃" % (player.name)
+        damage = player.attack - self.enemy.defense
+        print u"%s に %3d" % (self.enemy.name, damage)
+        self.enemy.hp -= damage
+        if self.enemy.hp <= 0:
+            print u"%s を倒した" % (self.enemy.name)
+            print u"EXP +%3d" % (self.enemy.exp)
+            player.add_exp(self.enemy.exp)
+            global game
+            game = game_stack.pop()
+        return True
+    def magic(self):
+        pass
+    def defense(self):
+        print u"%s は 防御した" % (player.name)
+        return True
 
-class Status(BaseSystem):
+class Status(SystemBase):
     def __init__(self):
         self.state = STATUS
         pass
     def draw(self):
         print u"ステータス画面"
-#         global party
-        for player in party.member:
-            player.show(self.state)
+        player.show(self.state)
     def update(self):
         pass
     def changed(self, input_command):
@@ -122,7 +195,7 @@ class Status(BaseSystem):
             return True
         return False
 
-class Field(BaseSystem):
+class Field(SystemBase):
     def __init__(self):
         self.state = FIELD
         self.next_town = 20
@@ -132,9 +205,9 @@ class Field(BaseSystem):
     def update(self):
         pass
     def encount(self):
-        r = random.randint(1,10)
-        if r > 5:
-            print r, "enemy encount"
+        r = random.randint(1,100)
+        if r <= 20:
+            print "敵が現れた"
             global game
             game_stack.append(game)
             game = Battle()
@@ -158,7 +231,7 @@ class Field(BaseSystem):
             return True
         return False
 
-class Title(BaseSystem):
+class Title(SystemBase):
     START, CONTINUE, EXIT = 0, 1, 2
     def __init__(self):
         self.menu = self.START
@@ -202,42 +275,56 @@ class Title(BaseSystem):
         pass
 
 #------------------------------------------------------------------------------
+class CharacterBase:
+    def __init__ (self):
+        pass
 class Character:
-    def __init__ (self, name, hp, attack, deffence):
+    def __init__ (self, name, hp, attack, defense):
         self.name = name
         self.max_hp = hp
         self.hp = hp
         self.attack = attack
-        self.deffence = deffence
+        self.defense = defense
+        self.lv = 1
     def attackto(self):
         pass
     def show(self):
         pass
 
 class Enemy(Character):
-#     def __init__ (self, name, hp, attack, deffence):
-#         pass
+    def __init__ (self, name, hp, attack, defense, exp):
+        Character.__init__(self, name, hp, attack, defense)
+        self.exp = exp
     def show(self):
         print "%s" % ( self.name)
 
 class Player(Character):
+    def __init__ (self, name, hp, attack, defense):
+        Character.__init__(self, name, hp, attack, defense)
+        self.exp = 0
+        self.next_exp = 100
+        self.add_attack = 3
+        self.add_defense = 2
+        self.add_hp = 10
+    def add_exp(self, exp):
+        self.exp += exp
+        if self.exp > self.next_exp:
+            # Lv Up
+            self.next_exp *= 2
+            self.lv += 1
+            self.max_hp  += self.add_hp
+            self.hp  = self.max_hp
+            self.attack  += self.add_attack
+            self.defense += self.add_defense
+            print "%s は レベル が上がった +HP %2d +ATK %2d +DEF %3d" % ( self.name, self.add_hp, self.add_attack, self.add_defense)
     def show(self, state):
         if state == STATUS:
-            print "%s HP %3d/%3d ATK:%3d DEF:%3d" % ( self.name, self.hp, self.max_hp, self.attack, self.deffence)
+            print "%s HP %3d/%3d ATK:%3d DEF:%3d" % ( self.name, self.hp, self.max_hp, self.attack, self.defense)
         if state == BATTLE:
             print "%s %3d/%3d" % ( self.name, self.hp, self.max_hp)
+    def damage(self, enemy):
+        return damage
 
-class Party:
-    def __init__(self):
-        # Partyのメンバーリスト
-        self.member = []
-    def add(self, player):
-        """Partyにplayerを追加"""
-        self.member.append(player)
-    def update(self):
-        pass
-    def draw(self):
-        pass
 
 #------------------------------------------------------------------------------
 
@@ -245,10 +332,11 @@ class PyRPG:
     def __init__(self):
         # Title
         global game
-        game = Title()
-        global party
-        player1 = Player(u"勇者", 100, 20, 10)
-        party.add(player1)
+#         game = Title()
+#         game = Battle()
+        game = Field()
+        global player
+        player = Player(u"勇者", 100, 20, 10)
         self.last_input = NONE
         # メインループを起動
         self.main_looop()
@@ -258,8 +346,8 @@ class PyRPG:
         re_draw = True
         turn = 0
         while True:
-            self.update()
             if re_draw == True :
+                self.update()
 #                 print "------------------------"
                 print "------------- %s %3d" % (STATE_NAME[game.state], turn)
                 turn += 1
@@ -283,8 +371,8 @@ class PyRPG:
         elif game.state == FIELD:
             keys = ["h", "l", "a"]
             key_message = " %s or %s or %s : " % (keys[0],keys[1],keys[2])
-        in_txt = raw_input(key_message)
-#         in_txt = raw_input()
+#         in_txt = raw_input(key_message)
+        in_txt = raw_input()
         if in_txt == "":
             re_draw = game.changed(self.last_input)
         elif in_txt == "Q":
@@ -311,9 +399,9 @@ class PyRPG:
         return re_draw
 
 #------------------------------------------------------------------------------
-game = BaseSystem()
+game = SystemBase()
 game_stack = []
-party = Party()
+player = CharacterBase()
 
 if __name__ == "__main__":
     PyRPG()
