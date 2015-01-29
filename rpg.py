@@ -31,13 +31,15 @@ class Event(BaseSystem):
         self.state = EVENT
         self.event_state = EVENT_OPENING
         self.end_event = False
+        self.turn = 0
     def message(self):
         storys = [u"勇者よ",u"魔王を倒してくれ"]
-        for s in storys:
-            yield s
-        self.end_event = True
+        if len(storys) - 1 == self.turn:
+            self.end_event = True
+        return storys[self.turn]
     def draw(self):
-        print self.message()
+        s = self.message()
+        print s
     def update(self):
         if self.end_event == True:
             global game
@@ -48,7 +50,8 @@ class Event(BaseSystem):
         elif input_command == UP:
             pass
         elif input_command == ENTER:
-            pass
+            self.turn += 1
+            return True
         elif input_command == CANCEL:
             pass
         return False
@@ -57,19 +60,19 @@ class Battle(BaseSystem):
     FIGHT, EXIT = range(2)
     def __init__(self):
         self.state = BATTLE
-        self.enemys = self.enemy_create()
+        self.enemy = self.enemy_create()
         self.menu = self.FIGHT
     def enemy_create(self):
-        return ["enemy 1", "enemy 2"]
+        enemy = Enemy(u"スライム", 20,10,5)
+        return enemy
     def draw(self):
         #
-        for i in party:
-            print i
+        for player in party.member:
+            player.show(self.state)
         #
-        for i in self.enemys:
-            print i
-        menus = [u"戦う",u"逃げる"]
+        enemy.show()
         # カーソルの描画
+        menus = [u"戦う",u"逃げる"]
         if self.menu == self.FIGHT:
             menus[0] += " * "
         elif self.menu == self.EXIT:
@@ -101,8 +104,9 @@ class Status(BaseSystem):
         pass
     def draw(self):
         print u"ステータス画面"
-        for i in party:
-            i.status()
+#         global party
+        for player in party.member:
+            player.show(self.state)
     def update(self):
         pass
     def changed(self, input_command):
@@ -199,10 +203,29 @@ class Title(BaseSystem):
 
 #------------------------------------------------------------------------------
 class Character:
-    pass
+    def __init__ (self, name, hp, attack, deffence):
+        self.name = name
+        self.max_hp = hp
+        self.hp = hp
+        self.attack = attack
+        self.deffence = deffence
+    def attackto(self):
+        pass
+    def show(self):
+        pass
+
+class Enemy(Character):
+#     def __init__ (self, name, hp, attack, deffence):
+#         pass
+    def show(self):
+        print "%s" % ( self.name)
 
 class Player(Character):
-    pass
+    def show(self, state):
+        if state == STATUS:
+            print "%s HP %3d/%3d ATK:%3d DEF:%3d" % ( self.name, self.hp, self.max_hp, self.attack, self.deffence)
+        if state == BATTLE:
+            print "%s %3d/%3d" % ( self.name, self.hp, self.max_hp)
 
 class Party:
     def __init__(self):
@@ -223,6 +246,9 @@ class PyRPG:
         # Title
         global game
         game = Title()
+        global party
+        player1 = Player(u"勇者", 100, 20, 10)
+        party.add(player1)
         self.last_input = NONE
         # メインループを起動
         self.main_looop()
@@ -234,6 +260,7 @@ class PyRPG:
         while True:
             self.update()
             if re_draw == True :
+#                 print "------------------------"
                 print "------------- %s %3d" % (STATE_NAME[game.state], turn)
                 turn += 1
                 self.draw()
@@ -257,6 +284,7 @@ class PyRPG:
             keys = ["h", "l", "a"]
             key_message = " %s or %s or %s : " % (keys[0],keys[1],keys[2])
         in_txt = raw_input(key_message)
+#         in_txt = raw_input()
         if in_txt == "":
             re_draw = game.changed(self.last_input)
         elif in_txt == "Q":
