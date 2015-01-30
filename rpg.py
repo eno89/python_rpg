@@ -500,6 +500,7 @@ game = SystemBase()
 game_stack = []
 player = CharacterBase()
 debug_print = False
+debug_print = True
 
 if __name__ == "__main__":
     PyRPG()
