@@ -5,13 +5,13 @@ import random
 import sys
 
 
-TITLE, EVENT, TOWN, FIELD, STATUS, BATTLE, BOSS = range(7)
+TITLE, EVENT, TOWN, FIELD, STATUS, BATTLE, BOSS, ENDING = range(8)
 # TITLE, EVENT, TOWN, FIELD, STATUS, BATTLE, BOSS, DUNGEON, TALK, COMMAND = range(10)
-STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "STATUS", "BATTLE", "BOSS"]
+STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "STATUS", "BATTLE", "BOSS", "ENDING" ]
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
 
-EVENT_OPENING, EVENT_MAOU, EVENT_ENDING = range(3)
+EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU, EVENT_ENDING = range(4)
 
 #------------------------------------------------------------------------------
 
@@ -75,8 +75,10 @@ class Event(SystemBase):
         self.event_state = event_state
         self.end_event = False
         self.turn = 0
-        if self.event_state == EVENT_OPENING:
+        if   self.event_state == EVENT_OPENING:
             self.storys = [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」"]
+        elif self.event_state == EVENT_TOWN_TALK:
+            self.storys = [u"「次は魔王城だよ」"]
         elif self.event_state == EVENT_MAOU:
             self.storys = [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"]
     def message(self):
@@ -89,7 +91,15 @@ class Event(SystemBase):
     def update(self):
         if self.end_event == True:
             global game
-            game = Field()
+            if   self.event_state == EVENT_OPENING:
+                game = Field()
+            elif self.event_state == EVENT_TOWN_TALK:
+                game = game_stack.pop()
+            elif self.event_state == EVENT_MAOU:
+                boss = boss_create()
+                print u"%s が現れた" % (boss.name)
+                game = Battle(boss)
+                game_stack.append(Ending())
     def changed(self, input_command):
         if input_command == ENTER:
             self.turn += 1
@@ -102,13 +112,39 @@ class Town(SystemBase):
         SystemBase.__init__(self)
         self.game_state = DOWN
         self.menu = 0
-        pass
+        self.menus = [u"話す", u"泊まる", u"出発する"]
+        self.is_select = True
+        print "ここは %s だよ" % ("AAA町")
     def draw(self):
-        print "ここは %s だよ" % ("XXX町")
-#     def update(self):
-#         pass
+        if self.is_select:
+            for i in range(len(self.menus)):
+                if  self.menu == i:
+                    print " * " + self.menus[i]
+                else:
+                    print "   " + self.menus[i]
     def changed(self, input_command):
-        return True
+        if   input_command == DOWN:
+            self.menu += 1
+            self.menu %= len(self.menus)
+            return True
+        elif input_command == DOWN:
+            self.menu += (len(self.menus) - 1)
+            self.menu %= len(self.menus)
+            return True
+        elif input_command == ENTER:
+            self.action()
+            return True
+        return False
+    def action(self):
+        global game
+        if self.menu == self.TALK:
+            game_stack.append(game)
+            game = Event(EVENT_TOWN_TALK)
+        if self.menu == self.SLEEP:
+            player.recover()
+            print u"全回復した"
+        if self.menu == self.NEXT:
+            game = Event(EVENT_MAOU)
 
 class Field(SystemBase):
     def __init__(self):
@@ -125,7 +161,8 @@ class Field(SystemBase):
             print u"敵が現れた"
             global game
             game_stack.append(game)
-            game = Battle(enemy_create)
+            enemy = enemy_create()
+            game = Battle(enemy)
     def changed(self, input_command):
         global game
         if input_command == RIGHT:
@@ -175,17 +212,21 @@ def calc_damage(attack, defense):
         damage = 0
     return damage
 
+def boss_create():
+    enemy = Enemy(u"魔王", 220, 10, 0, 0)
+    return enemy
+
 def enemy_create():
-    enemy = Enemy(u"スライム", 20,15, 5, 10)
+    enemy = Enemy(u"スライム", 30, 5, 0, 10)
     return enemy
 
 class Battle(SystemBase):
     B_START, B_COMMAND, B_BATTLE = range(3)
     START_FIGHT, START_EXIT = range(2)
     COMMAND_ATTACK, COMMAND_MAGIC, COMMAND_DEFENSE = range(3)
-    def __init__(self, create):
+    def __init__(self, enemy):
         self.game_state = BATTLE
-        self.enemy = enemy_create()
+        self.enemy = enemy
         #
         self.b_state = Battle.B_START
         self.menu = Battle.START_FIGHT
@@ -237,6 +278,7 @@ class Battle(SystemBase):
                 print u"%s に %3d" % (player.name, damage)
                 player.receive_damage(damage)
     def changed(self, input_command):
+        self.is_battle = False
         if input_command == DOWN:
             if self.b_state == Battle.B_START:
                 self.menu += 1
@@ -301,6 +343,16 @@ class Battle(SystemBase):
     def defense(self):
         print u"%s は 防御した" % (player.name)
 
+class Ending(SystemBase):
+    def __init__(self):
+        SystemBase.__init__(self)
+        self.game_state = ENDING
+    def draw(self):
+        print "Fin"
+    def changed(self, input_command):
+        if input_command == ENTER:
+            sys.exit()
+        return True
 
 
 #------------------------------------------------------------------------------
@@ -346,14 +398,15 @@ class Player(Character):
             self.next_exp *= 2
             self.lv += 1
             self.max_hp  += self.add_hp
-            self.hp  = self.max_hp
             self.attack  += self.add_attack
             self.defense += self.add_defense
             print u"%s は レベル が上がった +HP %2d +ATK %2d +DEF %3d" % ( self.name, self.add_hp, self.add_attack, self.add_defense)
+            self.hp  += self.add_hp
+#             self.recover()
     def show(self, game_state):
         if game_state == STATUS:
             print u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense)
-            print u"        Exp %3d 次のレベルまで %3d" % ( self.exp, (self.next_exp - self.exp))
+            print u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp))
         if game_state == BATTLE:
             print u"%s %3d/%3d" % ( self.name, self.hp, self.max_hp)
     def receive_damage(self, damage):
@@ -364,7 +417,9 @@ class Player(Character):
             global game_stack
             del game_stack[:]
             game = Title()
-        print
+            self.recover()
+    def recover(self):
+        self.hp = self.max_hp
 
 
 #------------------------------------------------------------------------------
@@ -373,10 +428,9 @@ class PyRPG:
     def __init__(self):
         # Title
         global game
-#         game = Title()
-        game = Field()
+        game = Title()
         global player
-        player = Player(u"勇者", 100, 20, 10)
+        player = Player(u"勇者", 100, 20, 0)
         self.last_input = NONE
         # メインループを起動
         self.main_looop()
@@ -388,8 +442,10 @@ class PyRPG:
         while True:
             if re_draw == True :
                 self.update()
-#                 print "------------------------"
-                print "------------- %s %3d" % (STATE_NAME[game.game_state], turn)
+                if debug_print:
+                    print "------------- %s %3d" % (STATE_NAME[game.game_state], turn)
+                else:
+                    print "------------------------"
                 turn += 1
                 self.draw()
             re_draw = self.check_event()
@@ -401,18 +457,18 @@ class PyRPG:
     def check_event(self):
         re_draw = False
         keys = ["h", "j", "k","l", "a", "x"]
-        key_message = " %s" % keys[0]
-        for k in keys[1:]:
-            key_message += " or %s" % k
+        keys_mean = ["Left", "Down", "Up","Right", "Enter", "Cancel"]
+        key_message = ""
+        for i in range(len(keys)-1):
+            key_message += " %s(%s)" % (keys[i],keys_mean[i])
+            key_message += " or"
+        else:
+            key_message += " %s(%s)" % (keys[i+1],keys_mean[i+1])
         key_message += " : "
-        if game.game_state == TITLE:
-            keys = ["j", "k", "a"]
-            key_message = " %s or %s or %s : " % (keys[0],keys[1],keys[2])
-        elif game.game_state == FIELD:
-            keys = ["h", "l", "a"]
-            key_message = " %s or %s or %s : " % (keys[0],keys[1],keys[2])
-#         in_txt = raw_input(key_message)
-        in_txt = raw_input()
+        if debug_print:
+            in_txt = raw_input(key_message)
+        else:
+            in_txt = raw_input()
         if in_txt == "":
             re_draw = game.changed(self.last_input)
         elif in_txt == "Q":
@@ -442,6 +498,7 @@ class PyRPG:
 game = SystemBase()
 game_stack = []
 player = CharacterBase()
+debug_print = True
 
 if __name__ == "__main__":
     PyRPG()
