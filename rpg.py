@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import time
 import random
 import sys
 
 
 TITLE, EVENT, TOWN, FIELD, STATUS, BATTLE, BOSS, ENDING = range(8)
-# TITLE, EVENT, TOWN, FIELD, STATUS, BATTLE, BOSS, DUNGEON, TALK, COMMAND = range(10)
 STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "STATUS", "BATTLE", "BOSS", "ENDING" ]
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
 
-EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU, EVENT_ENDING = range(4)
+EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU_BEGIN, EVENT_MAOU_END, EVENT_ENDING = range(5)
 
 #------------------------------------------------------------------------------
 
@@ -76,10 +74,10 @@ class Event(SystemBase):
         self.end_event = False
         self.turn = 0
         if   self.event_state == EVENT_OPENING:
-            self.storys = [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」"]
+            self.storys = [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」",u"王様「まずは次の町に向かうのじゃ」"]
         elif self.event_state == EVENT_TOWN_TALK:
             self.storys = [u"「次は魔王城だよ」"]
-        elif self.event_state == EVENT_MAOU:
+        elif self.event_state == EVENT_MAOU_BEGIN:
             self.storys = [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"]
     def message(self):
         if len(self.storys) - 1 == self.turn:
@@ -95,7 +93,7 @@ class Event(SystemBase):
                 game = Field()
             elif self.event_state == EVENT_TOWN_TALK:
                 game = game_stack.pop()
-            elif self.event_state == EVENT_MAOU:
+            elif self.event_state == EVENT_MAOU_BEGIN:
                 boss = boss_create()
                 print u"%s が現れた" % (boss.name)
                 game = Battle(boss)
@@ -107,14 +105,14 @@ class Event(SystemBase):
         return False
 
 class Town(SystemBase):
-    TALK, SLEEP, NEXT = range(3)
+    TALK, SLEEP, STATUS, NEXT = range(4)
     def __init__(self):
         SystemBase.__init__(self)
         self.game_state = DOWN
         self.menu = 0
-        self.menus = [u"話す", u"泊まる", u"出発する"]
+        self.menus = [u"話す", u"泊まる",u"ステータスを見る", u"出発する"]
         self.is_select = True
-        print "ここは %s だよ" % ("AAA町")
+        print "ここは %s だよ" % ("町")
     def draw(self):
         if self.is_select:
             for i in range(len(self.menus)):
@@ -127,7 +125,7 @@ class Town(SystemBase):
             self.menu += 1
             self.menu %= len(self.menus)
             return True
-        elif input_command == DOWN:
+        elif input_command == UP:
             self.menu += (len(self.menus) - 1)
             self.menu %= len(self.menus)
             return True
@@ -137,14 +135,17 @@ class Town(SystemBase):
         return False
     def action(self):
         global game
-        if self.menu == self.TALK:
+        if   self.menu == self.TALK:
             game_stack.append(game)
             game = Event(EVENT_TOWN_TALK)
-        if self.menu == self.SLEEP:
+        elif self.menu == self.SLEEP:
             player.recover()
             print u"全回復した"
-        if self.menu == self.NEXT:
-            game = Event(EVENT_MAOU)
+        elif self.menu == self.STATUS:
+            game_stack.append(game)
+            game = Status()
+        elif self.menu == self.NEXT:
+            game = Event(EVENT_MAOU_BEGIN)
 
 class Field(SystemBase):
     def __init__(self):
@@ -165,7 +166,7 @@ class Field(SystemBase):
             game = Battle(enemy)
     def changed(self, input_command):
         global game
-        if input_command == RIGHT:
+        if input_command == RIGHT or input_command == UP:
             if self.move == self.next_town - 1:
                 game = Town()
                 return True
@@ -173,7 +174,7 @@ class Field(SystemBase):
                 self.move += 1
                 self.encount()
                 return True
-        elif input_command == LEFT:
+        elif input_command == LEFT or input_command == DOWN:
             if not self.move == 0:
                 self.move -= 1
                 self.encount()
@@ -194,13 +195,7 @@ class Status(SystemBase):
     def update(self):
         pass
     def changed(self, input_command):
-        if input_command == DOWN:
-            pass
-        elif input_command == UP:
-            pass
-        elif input_command == ENTER:
-            pass
-        elif input_command == CANCEL:
+        if input_command == ENTER or input_command == CANCEL:
             global game
             game = game_stack.pop()
             return True
@@ -213,7 +208,7 @@ def calc_damage(attack, defense):
     return damage
 
 def boss_create():
-    enemy = Enemy(u"魔王", 220, 10, 0, 0)
+    enemy = Enemy(u"魔王", 300, 10, 0, 0)
     return enemy
 
 def enemy_create():
@@ -359,7 +354,9 @@ class Ending(SystemBase):
 class CharacterBase:
     def __init__ (self):
         pass
+
 class Character:
+    """ プレイヤー，敵，味方，NPC """
     def __init__ (self, name, hp, attack, defense):
         self.name = name
         self.max_hp = hp
@@ -387,7 +384,9 @@ class Player(Character):
     def __init__ (self, name, hp, attack, defense):
         Character.__init__(self, name, hp, attack, defense)
         self.exp = 0
-        self.next_exp = 10
+        self.next_exp = 0
+        self.add_next_exp = 10
+        self.next_exp += self.add_next_exp
         self.add_attack = 3
         self.add_defense = 2
         self.add_hp = 10
@@ -395,7 +394,8 @@ class Player(Character):
         self.exp += exp
         if self.exp >= self.next_exp:
             # Lv Up
-            self.next_exp *= 2
+            self.add_next_exp *= 2
+            self.next_exp += self.add_next_exp
             self.lv += 1
             self.max_hp  += self.add_hp
             self.attack  += self.add_attack
@@ -434,7 +434,7 @@ class PyRPG:
         self.last_input = NONE
         # メインループを起動
         self.main_looop()
-        # End
+        # 終了は sys.exit()
     def main_looop(self):
         """メインループ"""
         re_draw = True
@@ -498,7 +498,7 @@ class PyRPG:
 game = SystemBase()
 game_stack = []
 player = CharacterBase()
-debug_print = True
+debug_print = False
 
 if __name__ == "__main__":
     PyRPG()
