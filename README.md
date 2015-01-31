@@ -8,3 +8,5 @@ http://home.wlu.edu/~levys/software/kbhit.py
 648
 a = [12+94, 399, 143]
 s = sum(a)
+
+http://support.microsoft.com/kb/99261/ja

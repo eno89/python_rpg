@@ -4,15 +4,17 @@
 import random
 import sys
 import os
+import time
 # Windows
 if os.name == "nt":
     import msvcrt
 
+
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
 #------------------------------------------------------------------------------
 class GameBase:
-    GAME_TITLE, GAME_EVENT, GAME_TOWN, GAME_FIELD, GAME_MENU, GAME_BATTLE, GAME_ENDING = range(7)
-    STATE_NAME = ["GAME_TITLE", "GAME_EVENT", "GAME_TOWN", "GAME_FIELD", "GAME_MENU", "GAME_BATTLE", "GAME_ENDING" ]
+    TITLE, EVENT, TOWN, FIELD, MENU, BATTLE, ENDING = range(7)
+    STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "MENU", "BATTLE", "ENDING" ]
     def __init__(self):
 #         self.game_state = []
         pass
@@ -24,35 +26,33 @@ class GameBase:
         pass
 
 def draw_select(select, selects):
-    # カーソルの描画
+    '''選択肢の描画 '''
     for i in range(len(selects)):
         if  select == i:
             print " * " + selects[i]
         else:
             print "   " + selects[i]
 
-def forward_select(select, selects):
-    selects_len = len(selects)
+def forward_select(select, selects_len):
     return (select + 1) % selects_len
 
-def back_select(select, selects):
-    selects_len = len(selects)
+def back_select(select, selects_len):
     return (select + selects_len - 1) % selects_len
 
 class Title(GameBase):
     START, CONTINUE, EXIT = range(3)
     def __init__(self):
-        self.game_state = [GameBase.GAME_TITLE]
+        self.game_state = [GameBase.TITLE]
         self.select = self.START
         self.selects = ["START","CONTINUE", "EXIT"]
     def draw(self):
         draw_select(self.select, self.selects)
     def changed(self, key):
         if key == DOWN:
-            self.select = forward_select(self.select, self.selects)
+            self.select = forward_select(self.select, len(self.selects))
             return True
         elif key == UP:
-            self.select = back_select(self.select, self.selects)
+            self.select = back_select(self.select, len(self.selects))
             return True
         elif key == ENTER:
             if self.select == Title.START:
@@ -69,7 +69,7 @@ class Title(GameBase):
 class Event(GameBase):
     EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU_BEGIN, EVENT_MAOU_END, EVENT_ENDING = range(5)
     def __init__(self, event_state):
-        self.game_state = [GameBase.GAME_EVENT]
+        self.game_state = [GameBase.EVENT]
         self.event_state = event_state
         self.end_event = False
         self.turn = 0
@@ -115,7 +115,7 @@ class Town(GameBase):
     TALK, SLEEP, STATUS, NEXT = range(4)
     def __init__(self):
         GameBase.__init__(self)
-        self.game_state = [ GameBase.GAME_TOWN ]
+        self.game_state = [ GameBase.TOWN ]
         self.select = 0
         self.selects = [u"話す", u"泊まる",u"メニューを開く", u"出発する"]
     def draw(self):
@@ -123,10 +123,10 @@ class Town(GameBase):
         draw_select(self.select, self.selects)
     def changed(self, key):
         if   key == DOWN:
-            self.select = forward_select(self.select, self.selects)
+            self.select = forward_select(self.select, len(self.selects))
             return True
         elif key == UP:
-            self.select = back_select(self.select, self.selects)
+            self.select = back_select(self.select, len(self.selects))
             return True
         elif key == ENTER:
             self.action()
@@ -148,7 +148,7 @@ class Town(GameBase):
 
 class Field(GameBase):
     def __init__(self):
-        self.game_state = [ GameBase.GAME_FIELD ]
+        self.game_state = [ GameBase.FIELD ]
         self.next_town = 20
         self.move = 0
         self.encounter_value = 0.2
@@ -185,7 +185,7 @@ class Field(GameBase):
 class Menu(GameBase):
     COMMAND_STATUS, COMMAND_EQUIPMENT  = range(2)
     def __init__(self):
-        self.game_state = [GameBase.GAME_MENU]
+        self.game_state = [GameBase.MENU]
         self.subgame = None
         self.select = Menu.COMMAND_STATUS
         self.selects = [u"ステータス", u"装備"]
@@ -199,10 +199,10 @@ class Menu(GameBase):
     def changed(self, key):
         if self.subgame is None:
             if   key == DOWN:
-                self.select = forward_select(self.select, self.selects)
+                self.select = forward_select(self.select, len(self.selects))
                 return True
             elif key == UP:
-                self.select = back_select(self.select, self.selects)
+                self.select = back_select(self.select, len(self.selects))
                 return True
             elif key == ENTER:
                 self.game_state.append(self.select)
@@ -280,10 +280,10 @@ class MenuEquipment():
     def changed(self, key):
         if self.mode == MenuEquipment.SELECT_TYPE:
             if   key == DOWN:
-                self.select = forward_select(self.select, self.selects)
+                self.select = forward_select(self.select, len(self.selects))
                 return True, False
             elif key == UP:
-                self.select = back_select(self.select, self.selects)
+                self.select = back_select(self.select, len(self.selects))
                 return True, False
             elif key == ENTER:
                 self.mode = MenuEquipment.SELECT_ITEM
@@ -326,7 +326,7 @@ class Battle(GameBase):
     START_FIGHT, START_ESCAPE = range(2)
     FIGHT_ATTACK, FIGHT_MAGIC, FIGHT_DEFFENSE = range(3)
     def __init__(self, enemy):
-        self.game_state = [GameBase.GAME_BATTLE]
+        self.game_state = [GameBase.BATTLE]
         self.enemy = enemy
         #
         self.b_state = Battle.B_START
@@ -360,10 +360,10 @@ class Battle(GameBase):
     def changed(self, key):
         self.is_battle = False
         if key == DOWN:
-            self.select = forward_select(self.select, self.selects)
+            self.select = forward_select(self.select, len(self.selects))
             return True
         elif key == UP:
-            self.select = back_select(self.select, self.selects)
+            self.select = back_select(self.select, len(self.selects))
             return True
         elif key == ENTER:
             if self.b_state == Battle.B_START:
@@ -402,7 +402,7 @@ class Battle(GameBase):
 
 class Ending(GameBase):
     def __init__(self):
-        self.game_state = [ GameBase.GAME_ENDING ]
+        self.game_state = [ GameBase.ENDING ]
     def draw(self):
         print "Fin"
     def changed(self, key):
@@ -471,13 +471,13 @@ class Player(Character):
         self.armor = [Armor(u"なし",0, 0)]
         self.escape_value = 0.5
     def show(self):
-        if game.game_state[0] == GameBase.GAME_MENU:
+        if game.game_state[0] == GameBase.MENU:
             if game.game_state[1] == Menu.COMMAND_STATUS:
                 print u"お金 %5d" % ( self.money)
                 print u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense)
                 print u"        %s %+3d %s %+3d" % (self.wepon[0].name, self.wepon[0].value, self.armor[0].name, self.armor[0].value)
                 print u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp))
-        if game.game_state[0] == GameBase.GAME_BATTLE:
+        if game.game_state[0] == GameBase.BATTLE:
             print u"%s %3d/%3d" % ( self.name, self.hp, self.max_hp)
     def str_equipment(self, equip):
         if equip == MenuEquipment.WEAPON:
@@ -580,15 +580,16 @@ class PyRPG:
         re_draw = True
         turn = 0
         while True:
-            if re_draw == True :
-                self.update()
-                if debug_print:
-                    print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
-                else:
-                    print "------------------------"
-                turn += 1
-                self.draw()
-            re_draw = self.check_event()
+            # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
+            self.update()
+            if debug_print:
+                print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
+            else:
+                time.sleep(0.25)
+                os.system('cls')
+            turn += 1
+            self.draw()
+            self.check_event()
     def update(self):
         """ゲーム状態の更新"""
         game.update()
@@ -641,8 +642,8 @@ class PyRPG:
 game = GameBase()
 game_stack = []
 player = CharacterBase()
-# debug_print = False
-debug_print = True
+debug_print = False
+# debug_print = True
 
 if __name__ == "__main__":
     PyRPG()
