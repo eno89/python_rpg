@@ -33,12 +33,25 @@ def draw_select(select, selects):
         else:
             print "   " + selects[i]
 
+def draw_lr_select(select, selects, depth):
+    '''選択肢の描画 左右'''
+    head = " " * depth * 2
+    for j in range(len(selects)):
+        print head,
+        if  select == j:
+            print "*",
+        else:
+            print " ",
+        print selects[j],
+    print
+
 def forward_select(select, selects_len):
     return (select + 1) % selects_len
 
 def back_select(select, selects_len):
     return (select + selects_len - 1) % selects_len
 
+#--------------------------------------
 class Title(GameBase):
     START, CONTINUE, EXIT = range(3)
     def __init__(self):
@@ -62,6 +75,7 @@ class Title(GameBase):
             elif self.select == Title.EXIT:
                 sys.exit()
 
+#--------------------------------------
 class Event(GameBase):
     EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU_BEGIN, EVENT_MAOU_END, EVENT_ENDING = range(5)
     def __init__(self, event_state):
@@ -91,7 +105,7 @@ class Event(GameBase):
                 items =  [Wepon(u"棍棒", 3, 20),Wepon(u"銅剣", 5, 60)]
                 for item in items:
                     player.add_item(item)
-                game = Field()
+                game = Field(Field.GRASSLAND_1)
                 return True
             elif self.event_state == Event.EVENT_TOWN_TALK:
                 game = game_stack.pop()
@@ -108,20 +122,22 @@ class Event(GameBase):
         if key == ENTER:
             self.turn += 1
 
+#--------------------------------------
 class Town(GameBase):
-    TALK, SLEEP, STATUS, NEXT = range(4)
+    TALK, SLEEP, STATUS, BACK, NEXT = range(5)
     def __init__(self):
         GameBase.__init__(self)
         self.game_state = [ GameBase.TOWN ]
         self.select = 0
-        self.selects = [u"話す", u"泊まる",u"メニューを開く", u"出発する"]
+        self.selects = [u"話す", u"泊まる",u"メニューを開く", u"戻る", u"出発する"]
         self.is_action = False
+        self.name = u"町"
     def draw(self):
-        print u"ここは %s だよ" % (u"町")
+        print u"ここは %s だよ" % (self.name)
         draw_select(self.select, self.selects)
     def update(self):
         if self.is_action:
-            is_action = False
+            self.is_action = False
             return self.action()
         return False
     def changed(self, key):
@@ -147,30 +163,15 @@ class Town(GameBase):
             game = Event(Event.EVENT_MAOU_BEGIN)
         return False
 
-
-class CreateField():
-    TYPE, NEXT, ENCOUNTER = range(3)
-    def __init__(self):
-        self.fields = []
-        f = [ Field.GRASSLAND_1, 5 ,0.2 ]
-        self.fields.append(f)
-        f = [ Field.MOUNTAIN_1, 20 ,0.2 ]
-        self.fields.append(f)
-    def load_file(self, file_name):
-        pass
-    def create(self, field_state):
-        return self.fields[field_state]
-
-create_field = CreateField()
-
+#--------------------------------------
 class Field(GameBase):
     GRASSLAND_1, MOUNTAIN_1 = range(2)
     def __init__(self, field_state):
         self.game_state = [ GameBase.FIELD ]
         self.move = 0
         self.is_move = False
-        self.fild_state = fild_state
-        self.f = create_field.create(self.fild_state)
+        self.f = create_field.create(field_state)
+#         self.field_state = field_state
     def draw(self):
         print u"元の町 -- %2d -- 次の町(%2d)" % (self.move, self.f[CreateField.NEXT])
     def update(self):
@@ -181,7 +182,7 @@ class Field(GameBase):
     def changed(self, key):
         global game
         if key == RIGHT or key == DOWN:
-            if self.move == self.next_town - 1:
+            if self.move == self.f[CreateField.NEXT] - 1:
                 game = Town()
             else:
                 self.move += 1
@@ -203,14 +204,30 @@ class Field(GameBase):
             return True
         return False
 
+class CreateField():
+    STATE, NEXT, ENCOUNTER = range(3)
+    def __init__(self):
+        self.fields = []
+        f = [ Field.GRASSLAND_1, 5 ,0.2 ]
+        self.fields.append(f)
+        f = [ Field.MOUNTAIN_1, 20 ,0.2 ]
+        self.fields.append(f)
+    def load_file(self, file_name):
+        pass
+    def create(self, field_state):
+        return self.fields[field_state]
+
+create_field = CreateField()
+
+#--------------------------------------
 class Menu(GameBase):
-    STATUS, EQUIPMENT  = range(2)
+    STATUS, EQUIPMENT, ITEM  = range(3)
     def __init__(self):
         self.game_state = [GameBase.MENU]
         self.subgame = None
         self.subgames = [MenuStatus, MenuEquipment]
         self.select = Menu.STATUS
-        self.selects = [u"ステータス", u"装備"]
+        self.selects = [u"ステータス", u"装備", u"アイテム"]
     def draw(self):
         print u"メニュー"
         draw_select(self.select, self.selects)
@@ -234,7 +251,7 @@ class Menu(GameBase):
                 global game
                 game = game_stack.pop()
         else:
-            re_draw, to_none = self.subgame.changed(key)
+            to_none = self.subgame.changed(key)
             if to_none == True:
                 self.game_state.pop()
                 self.subgame = None
@@ -248,60 +265,102 @@ class MenuStatus():
         return False
     def changed(self, key):
         if key == ENTER or key == CANCEL:
-            return True, True
-        return False, False
+            return True
+        return False
 
 class MenuEquipment():
     WEAPON, ARMOR = range(2)
     SELECT_TYPE, SELECT_ITEM = range(2)
     def __init__(self):
+#         self.mode = MenuEquipment.SELECT_TYPE
+#         self.sub_select = 0
+#         self.sub_selects = []
+        #
+        self.subgame = None
+        self.subgames = [EquipmentWepon, EquipmentArmor]
         self.select = MenuEquipment.WEAPON
         self.selects = [u"武器", u"防具"]
-        self.mode = MenuEquipment.SELECT_TYPE
-        self.sub_select = 0
-        self.sub_selects = []
     def draw(self):
         print "--------"
         print u"装備"
-        if self.mode == MenuEquipment.SELECT_TYPE:
-            for i in range(len(self.selects)):
-                if  self.select == i:
-                    print " * " + self.selects[i] + " " + player.str_equipment(i)
-                else:
-                    print "   " + self.selects[i] + " " + player.str_equipment(i)
+        #
+        selects2 = []
+        for i in range(len(self.selects)):
+            selects2.append(self.selects[i] + " " + player.str_equipment(i))
+        draw_select(self.select, selects2)
+        #
+        if self.subgame is not None:
+            self.subgame.draw()
+        #
+#         if self.mode == MenuEquipment.SELECT_TYPE:
+#             for i in range(len(self.selects)):
+#                 if  self.select == i:
+#                     print " * " + self.selects[i] + " " + player.str_equipment(i)
+#                 else:
+#                     print "   " + self.selects[i] + " " + player.str_equipment(i)
+#         elif self.mode == MenuEquipment.SELECT_ITEM:
+#             for i in range(len(self.selects)):
+#                 if  self.select == i:
+#                     print "   " + self.selects[i], player.str_equipment(i) + "  ",
+#                     for j in range(len(self.sub_selects)):
+#                         if  self.sub_select == j:
+#                             print " *",
+#                         else:
+#                             print "  ",
+#                         print self.sub_selects[j],
+#                     print
+#                 else:
+#                     print "   " + self.selects[i] + " " + player.str_equipment(i)
     def sub_update(self):
-        pass
+        if self.subgame is not None:
+            is_draw = self.subgame.sub_update()
+            return is_draw
+        return False
     def changed(self, key):
-        if self.mode == MenuEquipment.SELECT_TYPE:
-            if   key == DOWN:
+        if self.subgame is None:
+            if key == DOWN:
                 self.select = forward_select(self.select, len(self.selects))
-                return True, False
             elif key == UP:
                 self.select = back_select(self.select, len(self.selects))
-                return True, False
             elif key == ENTER:
-                self.mode = MenuEquipment.SELECT_ITEM
-                self.set_sub_select()
-                return True, False
+                self.subgame = self.subgames[self.select]()
             elif key == CANCEL:
-                return True, True
-            return False, False
-        elif self.mode == MenuEquipment.SELECT_ITEM:
-            if   key == RIGHT:
-                self.sub_select = (self.sub_select + 1) % len(self.sub_selects)
-                return True, False
-            elif key == LEFT:
-                self.sub_select = (self.sub_select + len(self.sub_selects) - 1) % len(self.sub_selects)
-                return True, False
-            elif key == ENTER:
-                player.change_item(self.select, self.sub_select)
-                self.set_sub_select()
-                return True, False
-            elif key == CANCEL:
-                self.mode = MenuEquipment.SELECT_TYPE
-                self.sub_select = 0
-                return True, False
-        return False, False
+                return True
+        else:
+            to_none = self.subgame.changed(key)
+            if to_none == True:
+                self.subgame = None
+        return False
+#         if self.mode == MenuEquipment.SELECT_TYPE:
+#             if   key == DOWN:
+#                 self.select = forward_select(self.select, len(self.selects))
+#                 return True, False
+#             elif key == UP:
+#                 self.select = back_select(self.select, len(self.selects))
+#                 return True, False
+#             elif key == ENTER:
+#                 self.mode = MenuEquipment.SELECT_ITEM
+#                 self.set_sub_select()
+#                 return True, False
+#             elif key == CANCEL:
+#                 return True, True
+#             return False, False
+#         elif self.mode == MenuEquipment.SELECT_ITEM:
+#             if   key == RIGHT:
+#                 self.sub_select = (self.sub_select + 1) % len(self.sub_selects)
+#                 return True, False
+#             elif key == LEFT:
+#                 self.sub_select = (self.sub_select + len(self.sub_selects) - 1) % len(self.sub_selects)
+#                 return True, False
+#             elif key == ENTER:
+#                 player.change_item(self.select, self.sub_select)
+#                 self.set_sub_select()
+#                 return True, False
+#             elif key == CANCEL:
+#                 self.mode = MenuEquipment.SELECT_TYPE
+#                 self.sub_select = 0
+#                 return True, False
+#         return False, False
     def set_sub_select(self):
         self.sub_selects = []
         if self.select == MenuEquipment.WEAPON:
@@ -313,9 +372,40 @@ class MenuEquipment():
                 s = item.name + ("%+3d" % (item.value - player.armor[0].value))
                 self.sub_selects.append(s)
 
-class MenuEquipmentChange():
+def create_sub_selects(equipment):
+    sub_selects = []
+    for item in equipment:
+        s = item.name + ("%+3d" % (item.value - player.wepon[0].value))
+        sub_selects.append(s)
+    return sub_selects
+
+class EquipmentWepon():
+    def __init__(self):
+        self.equipment = player.wepon
+        self.sub_select = 0
+        self.sub_selects = create_sub_selects(self.equipment)
+        self.depth = 1
+    def draw(self):
+        draw_lr_select(self.sub_select, self.sub_selects, self.depth)
+    def sub_update(self):
+        return False
+    def changed(self, key):
+        if   key == RIGHT:
+            self.sub_select = forward_select(self.sub_select, len(self.sub_selects))
+#             self.sub_select = (self.sub_select + 1) % len(self.sub_selects)
+        elif key == LEFT:
+            self.sub_select = back_select(self.sub_select, len(self.sub_selects))
+#             self.sub_select = (self.sub_select + len(self.sub_selects) - 1) % len(self.sub_selects)
+        elif key == ENTER:
+            player.change_item(0, self.sub_select)
+            self.sub_selects = create_sub_selects(self.equipment)
+        elif key == CANCEL:
+            game.subgame = None
+
+class EquipmentArmor():
     pass
 
+#--------------------------------------
 def calc_damage_from(attack, pl):
     damage = attack  - (pl.defense + pl.armor[0].value)
     if damage < 0:
@@ -330,13 +420,12 @@ def calc_damage_to(defense, pl):
 
 class Battle(GameBase):
     FIGHT, ESCAPE = range(2)
-    FIGHT_ATTACK, FIGHT_MAGIC, FIGHT_DEFFENSE = range(3)
     def __init__(self, enemy):
         self.game_state = [GameBase.BATTLE]
         self.enemy = enemy
         #
         self.subgame = None
-        self.subgames = [Fight, Escape]
+        self.subgames = [BattleFight, BattleEscape]
         self.select = Battle.FIGHT
         self.selects = [u"戦う",u"逃げる"]
     def draw(self):
@@ -347,7 +436,7 @@ class Battle(GameBase):
         # 選択肢
         draw_select(self.select, self.selects)
         if self.subgame is not None:
-            to_none = self.subgame.draw()
+            self.subgame.draw()
     def update(self):
         if self.subgame is not None:
             no_battle, to_none = self.subgame.battle_update()
@@ -355,6 +444,7 @@ class Battle(GameBase):
                 self.subgame = None
                 if no_battle:
                     return True
+                print "BBBBBBBBB"
             if no_battle:
                 return False
             # 敵から
@@ -378,7 +468,8 @@ class Battle(GameBase):
             if to_none == True:
                 self.subgame = None
 
-class Fight():
+class BattleFight():
+#     FIGHT_ATTACK, FIGHT_MAGIC, FIGHT_DEFFENSE = range(3)
     def __init__(self, enemy):
         self.enemy = enemy
         self.selects = [u"攻撃", u"呪文", u"防御"]
@@ -423,7 +514,7 @@ class Fight():
         print u"%s は 防御した" % (player.name)
     pass
 
-class Escape():
+class BattleEscape():
     def __init__(self, enemy):
         self.enemy = enemy
     def draw(self):
@@ -433,14 +524,8 @@ class Escape():
         return battle_end, True
     def changed(self, key):
         pass
-#         return True
-#         if key == ENTER:
-#             player.escape()
-#         elif key == CANCEL:
-#             return True
-#         return False
 
-
+#--------------------------------------
 class Ending(GameBase):
     def __init__(self):
         self.game_state = [ GameBase.ENDING ]
