@@ -16,7 +16,7 @@ class GameBase:
     TITLE, EVENT, TOWN, FIELD, MENU, BATTLE, ENDING = range(7)
     STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "MENU", "BATTLE", "ENDING" ]
     def __init__(self):
-#         self.game_state = []
+        self.game_state = []
         pass
     def draw(self):
         pass
@@ -127,6 +127,7 @@ class Title(GameBase):
         elif key == ENTER:
             if self.select == Title.START:
                 global game, player
+                game_stack.append(Town(Town.KINGDOM))
                 game = Event(Event.EVENT_OPENING)
                 player = create_player()
             elif self.select == Title.CONTINUE:
@@ -142,44 +143,44 @@ class Event(GameBase):
         self.event_state = event_state
         self.end_event = False
         self.turn = 0
-        if   self.event_state == Event.EVENT_OPENING:
-            self.storys = [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」",u"王様「武器と防具を与えよう」",u"王様「まずは次の町に向かうのじゃ」"]
-        elif self.event_state == Event.EVENT_TOWN_TALK:
-            self.storys = [u"「次は魔王城だよ」"]
-        elif self.event_state == Event.EVENT_MAOU_BEGIN:
-            self.storys = [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"]
-        elif self.event_state == Event.EVENT_MAOU_END:
-            self.storys = [u"魔王「ぐふ」"]
+        storys_list = [ [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」",u"王様「武器と防具を与えよう」",u"王様「まずは次の町に向かうのじゃ」"],
+                             [u"「次は魔王城だよ」"],
+                             [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"],
+                             [u"魔王「ぐふ」"],
+                             [] ]
+        self.storys = storys_list[event_state]
     def message(self):
-        if len(self.storys) - 1 == self.turn:
-            self.end_event = True
         return self.storys[self.turn]
     def draw(self):
         s = self.message()
         print s
     def update(self):
+        self.turn += 1
+        if len(self.storys) == self.turn:
+            self.end_event = True
         if self.end_event == True:
             global game
             if   self.event_state == Event.EVENT_OPENING:
                 items =  [Wepon(u"棍棒", 3, 20),Wepon(u"銅剣", 5, 60)]
                 for item in items:
                     player.add_item(item)
-                game = Field(Field.GRASSLAND_1)
+                game = game_stack.pop()
                 return True
             elif self.event_state == Event.EVENT_TOWN_TALK:
                 game = game_stack.pop()
             elif self.event_state == Event.EVENT_MAOU_BEGIN:
-                boss = create_boss()
-                print u"%s が現れた" % (boss.name)
-                game = Battle(boss)
+                boss = GroupEnemy(create_boss())
+                boss.set_event(Event.EVENT_MAOU_END)
+                print u"%s が現れた" % (boss.get_name())
                 game_stack.append(Town(Town.MAOU))
+                game = Battle(boss)
                 return True
             elif self.event_state == Event.EVENT_MAOU_END:
                 game = Ending()
         return False
     def changed(self, key):
         if key == ENTER:
-            self.turn += 1
+            pass
 
 #--------------------------------------
 class Town(GameBase):
@@ -297,14 +298,14 @@ class Field(GameBase):
         self.is_move = False
         #
         e = create_field.create(field_state)
-        self.distance        = e[CreateField.DISTANCE]
-        self.encounter_value = e[CreateField.ENCOUNTER]
-        self.start           = e[CreateField.START]
-        self.arrive          = e[CreateField.ARRIVE]
+        self.distance  = e[CreateField.DISTANCE]
+        self.encounter = e[CreateField.ENCOUNTER]
+        self.start     = e[CreateField.START]
+        self.arrive    = e[CreateField.ARRIVE]
+        self.random_enemys = RandomEnemys(self.encounter)
         if is_reverse:
             self.reverse()
     def draw(self):
-#         print u"元の町 -- %2d -- 次の町(%2d)" % (self.move, self.f[CreateField.NEXT])
         st = "="
         for i in range(self.distance+1):
             if i == self.move:
@@ -312,12 +313,11 @@ class Field(GameBase):
             else:
                 st += " "
         st += "="
-#         st += "%2d-%2d" % (self.move, self.distance)
         print st
     def update(self):
         if self.is_move:
             self.is_move = False
-            return self.encounter()
+            return self.random_enemys.check_encounter()
         return False
     def changed(self, key):
         global game
@@ -336,27 +336,8 @@ class Field(GameBase):
         elif key == ENTER:
             game_stack.append(game)
             game = Menu()
-    def encounter(self):
-        if random.random() <= self.encounter_value:
-            print u"敵が現れた"
-            global game
-            game_stack.append(game)
-            enemy = create_common()
-            game = Battle(enemy)
-            return True
-        return False
     def reverse(self):
         self.move = self.distance
-
-# def encounter(self, encounter_value):
-#     if random.random() <= encounter_value:
-#         print u"敵が現れた"
-#         global game
-#         game_stack.append(game)
-#         enemy = create_common()
-#         game = Battle(enemy)
-#         return True
-#     return False
 
 class CreateField():
     STATE, DISTANCE, ENCOUNTER, START, ARRIVE = range(5)
@@ -514,25 +495,34 @@ class SMenuItem(SubGame):
     pass
 
 #--------------------------------------
-def calc_damage_from(attack, player):
-    damage = attack  - (player.defense + player.armor[0].value)
+def dice(n, m):
+    # nDm  m面の n個振る
+    s = 0
+    for i in range(n):
+        d = random.randint(1,m)
+        s += d
+    return s
+
+def calc_damage_def(enemy, player):
+    damage = enemy.attack ** 1.5 - (player.defense + player.armor[0].value)
     if player.is_defense:
         damage /= 3
     if damage < 0:
         damage = 0
     return damage
 
-def calc_damage_to(defense, player):
-    damage = player.attack + player.wepon[0].value - (defense)
+def calc_damage_atk(player, enemy):
+    atk = player.attack + player.wepon[0].value
+    damage = atk  - (enemy.defense)
     if damage < 0:
         damage = 0
     return damage
 
 class Battle(GameBase):
     FIGHT, ESCAPE = range(2)
-    def __init__(self, enemy):
+    def __init__(self, enemys):
         self.game_state = [GameBase.BATTLE]
-        self.enemy = enemy
+        self.enemys = enemys
         #
         self.subgame = None
         self.subgames = [BattleFight, BattleEscape]
@@ -542,7 +532,7 @@ class Battle(GameBase):
         # プレイヤー
         player.show(0)
         # 敵
-        self.enemy.show()
+        self.enemys.show()
         # 選択肢
         draw_select(self.select, self.selects)
         if self.subgame is not None:
@@ -557,11 +547,8 @@ class Battle(GameBase):
             if no_battle:
                 return False
             # 敵から
-            if self.enemy.is_living() == True:
-                print u"%s の攻撃" % (self.enemy.name)
-                damage = calc_damage_from(self.enemy.attack, player)
-                print u"%s に %3d" % (player.name, damage)
-                player.receive_damage(damage)
+            if self.enemys.is_living() == True:
+                self.enemys.do_attack()
                 player.battle_update()
             return True
         return False
@@ -572,7 +559,7 @@ class Battle(GameBase):
             elif key == UP:
                 self.select = back_select(self.select, len(self.selects))
             elif key == ENTER:
-                self.subgame = self.subgames[self.select](self.enemy, 1)
+                self.subgame = self.subgames[self.select](self.enemys, 1)
         else:
             to_none = self.subgame.sub_changed(key)
             if to_none == True:
@@ -580,8 +567,8 @@ class Battle(GameBase):
 
 class BattleFight():
     ATTACK, MAGIC, DEFFENSE = range(3)
-    def __init__(self, enemy, depth):
-        self.enemy = enemy
+    def __init__(self, enemys, depth):
+        self.enemys = enemys
         self.depth = depth
         #
         self.selects = [u"攻撃", u"呪文", u"防御"]
@@ -609,19 +596,16 @@ class BattleFight():
             return True
         return False
     def attack(self):
-        print u"%s の攻撃" % (player.name)
-        damage = calc_damage_to(self.enemy.defense, player)
-        print u"%s に %3d" % (self.enemy.name, damage)
-        self.enemy.receive_damage(damage)
-        if self.enemy.is_living() == False:
-            print u"%s を倒した" % (self.enemy.name)
-            player.add_exp(self.enemy.exp)
-            player.add_money(self.enemy.money)
+        self.enemys.receive()
+        if self.enemys.is_living() == False:
+            print u"%s を倒した" % (self.enemys.get_name())
+            player.add_exp(self.enemys.get_exp())
+            player.add_money(self.enemys.get_money())
             global game
-            if self.enemy.event is None:
+            if self.enemys.event is None:
                 game = game_stack.pop()
             else:
-                game = Event(self.enemy.event)
+                game = Event(self.enemys.event)
     def magic(self):
         pass
     def defense(self):
@@ -630,8 +614,8 @@ class BattleFight():
     pass
 
 class BattleEscape():
-    def __init__(self, enemy, depth):
-        self.enemy = enemy
+    def __init__(self, enemys, depth):
+        self.enemys = enemys
         self.depth = depth
     def draw(self):
         head = " " * self.depth * 2
@@ -653,22 +637,104 @@ class Ending(GameBase):
             sys.exit()
 
 #------------------------------------------------------------------------------
+class RandomEnemys():
+    def __init__(self, encounter, rmax=3):
+        self.encounter = encounter
+        self.rmax = rmax
+    def create(self):
+        r = random.randint(1,self.rmax)
+        enemys = GroupEnemy()
+        st = ["A","B","C"]
+        for i in range(r):
+            enemys.append(create_common(st[i]))
+        return enemys
+    def check_encounter(self):
+        if random.random() <= self.encounter:
+            print u"敵が現れた"
+            global game
+            game_stack.append(game)
+            enemys = self.create()
+            game = Battle(enemys)
+            return True
+        return False
+
 def create_boss():
-    boss = Enemy(u"魔王", 300, 10, 0, 1000, 1000)
-    boss.set_event(Event.EVENT_MAOU_END)
+    boss = Enemy(u"魔王", 300, 10, 10, 1000, 1000)
     return boss
 
-def create_common():
-    enemy = Enemy(u"スライム", 30, 5, 0, 10, 5)
+def create_common(name):
+    enemy = Enemy(u"スライム"+name, 30, 5, 5, 10, 5)
     return enemy
 
+# def create_common():
+#     enemy = Enemy(u"スライム", 30, 5, 5, 10, 5)
+#     return enemy
+
 def create_player():
-    player = Player(u"勇者", 100, 20, 0, 10, 4, 2, 10)
+    player = Player(u"勇者", 100, 10, 10, 10, 4, 2, 10)
     return player
 
 class CharacterBase:
     def __init__ (self):
         pass
+
+class GroupEnemy:
+    def __init__ (self, *args):
+        self.group = []
+        for e in args:
+            self.group.append(e)
+        #
+        self.event = None
+    def append(self, e):
+        self.group.append(e)
+    def show(self):
+        for e in self.group:
+            if e.is_living():
+                e.show()
+            else:
+                print
+    def is_living(self):
+        for e in self.group:
+            if e.is_living():
+                return True
+        return False
+    def livinglist(self):
+        lives = [0] * len(self.group)
+        for i in range(len(self.group)):
+            if self.group[i].is_living():
+                lives[i] = 1
+#         return sum(lives)
+        return lives
+    def do_attack(self):
+        for e in self.group:
+            if e.is_living():
+                print u"%s の攻撃" % (e.name)
+                damage = calc_damage_def(e, player)
+                print u"%s に %3d" % (player.name, damage)
+                player.receive_damage(damage)
+    def receive(self):
+        llist = self.livinglist()
+#         r = random.randint(0, sum(llist) - 1)
+        r = sum(llist) - 1
+        e = self.group[r]
+        print u"%s の攻撃" % (player.name)
+        damage = calc_damage_atk(player, e)
+        print u"%s に %3d" % (e.name, damage)
+        e.receive_damage(damage)
+    def get_name(self):
+        return self.group[0].name
+    def get_exp(self):
+        s = 0
+        for e in self.group:
+            s += e.exp
+        return s
+    def get_money(self):
+        s = 0
+        for e in self.group:
+            s += e.money
+        return s
+    def set_event(self, ev):
+        self.event = ev
 
 class Character:
     """ プレイヤー，敵，味方，NPC """
@@ -680,21 +746,21 @@ class Character:
         self.defense = defense
     def show(self):
         pass
+    def is_living(self):
+        if self.hp <= 0:
+            return False
+        return True
 
 class Enemy(Character):
     def __init__ (self, name, hp, attack, defense, exp, money):
         Character.__init__(self, name, hp, attack, defense)
         self.exp = exp
         self.money = money
-        self.event = None
     def show(self):
-        print "%s" % ( self.name)
-    def is_living(self):
-        if self.hp <= 0:
-            return False
-        return True
-    def set_event(self, ev):
-        self.event = ev
+        print "%s" % ( self.name) ,
+        p = self.hp * 5 / self.max_hp
+        st = "*" * int(p)
+        print st
     def receive_damage(self, damage):
         self.hp -= damage
 
@@ -824,19 +890,19 @@ class PyRPG:
         game = Title()
         self.last_key = NONE
         # メインループを起動
-        self.main_looop()
+        self.main_loop()
         # 終了は sys.exit()
-    def main_looop(self):
+    def main_loop(self):
         """メインループ"""
-        re_draw = True
         turn = 0
         while True:
             # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
             os.system('cls')
             self.draw()
             self.check_event()
+            os.system('cls')
+            self.draw()
             self.update()
-
             turn += 1
             if debug_print:
                 print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
@@ -873,6 +939,7 @@ game_stack = []
 player = CharacterBase()
 debug_print = False
 # debug_print = True
+random.seed(1)
 
 if __name__ == "__main__":
     PyRPG()
