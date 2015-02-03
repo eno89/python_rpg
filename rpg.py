@@ -2,12 +2,14 @@
 # vim: fileencoding=utf-8
 # ver 1.02
 import random
-import sys
-import os
+import sys, os, traceback
 import time
 # Windows
 if os.name == "nt":
     import msvcrt
+    CLEAR_SCREEN = 'cls'
+else:
+    CLEAR_SCREEN = 'clear'
 
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
@@ -33,7 +35,7 @@ class SubGame():
         self.is_action = False
     def draw(self):
         head = " " * self.depth * 2
-        print head + "--------"
+        draw_buffer.append(head + "--------")
     def sub_update(self):
         if self.is_action:
             self.is_action = False
@@ -89,20 +91,20 @@ def draw_select(select, selects, depth = 0):
         else:
             st += "   "
         st += selects[i]
-        print st
+        draw_buffer.append(st)
 
 def draw_lr_select(select, selects, depth = 0):
     '''選択肢の描画 左右'''
     head = " " * depth * 2
+    st = ""
     for i in range(len(selects)):
-        st = head
+        st += head
         if  select == i:
             st += " * "
         else:
             st += "   "
         st += selects[i]
-        print st,
-    print
+    draw_buffer.append(st)
 
 def forward_select(select, selects_len):
     return (select + 1) % selects_len
@@ -153,7 +155,7 @@ class Event(GameBase):
         return self.storys[self.turn]
     def draw(self):
         s = self.message()
-        print s
+        draw_buffer.append(s)
     def update(self):
         self.turn += 1
         if len(self.storys) == self.turn:
@@ -196,7 +198,7 @@ class Town(GameBase):
         self.selects = e[CreateTown.SELECTS]
         self.action = e[CreateTown.ACTION]
     def draw(self):
-        print u"== %s ==" % (self.name)
+        draw_buffer.append(u"== %s ==" % (self.name))
         draw_select(self.select, self.selects)
     def update(self):
         if self.is_action:
@@ -313,7 +315,7 @@ class Field(GameBase):
             else:
                 st += " "
         st += "="
-        print st
+        draw_buffer.append(st)
     def update(self):
         if self.is_move:
             self.is_move = False
@@ -365,7 +367,7 @@ class Menu(GameBase):
         self.select = Menu.STATUS
         self.selects = [u"ステータス", u"装備", u"アイテム"]
     def draw(self):
-        print u"メニュー"
+        draw_buffer.append(u"メニュー")
         draw_select(self.select, self.selects)
         if self.subgame is not None:
             to_none = self.subgame.draw()
@@ -398,8 +400,8 @@ class SMenuStatus():
         self.depth = depth
     def draw(self):
         head = " " * self.depth * 2
-        print head + "--------"
-        print head + u"ステータス"
+        draw_buffer.append( head + "--------" )
+        draw_buffer.append( head + u"ステータス")
         player.show(self.depth)
     def sub_update(self):
         return False
@@ -422,8 +424,8 @@ class SMenuEquipment():
         self.subgames_arg = [player.wepon, player.armor]
     def draw(self):
         head = " " * self.depth * 2
-        print head + "--------"
-        print head + u"装備"
+        draw_buffer.append( head + "--------" )
+        draw_buffer.append( head + u"装備" )
         #
         selects2 = []
         for i in range(len(self.selects)):
@@ -577,7 +579,7 @@ class BattleFight():
         self.actions = [self.attack, self.magic, self.defense]
     def draw(self):
         head = " " * self.depth * 2
-        print head + "--------"
+        draw_buffer.append( head + "--------" )
         draw_select(self.select, self.selects, self.depth)
     def sub_battle_update(self):
         if self.action is not None:
@@ -619,7 +621,7 @@ class BattleEscape():
         self.depth = depth
     def draw(self):
         head = " " * self.depth * 2
-        print head + "--------"
+        draw_buffer.append( head + "--------" )
     def sub_battle_update(self):
         battle_end = player.escape()
         return battle_end, True
@@ -631,7 +633,7 @@ class Ending(GameBase):
     def __init__(self):
         self.game_state = [ GameBase.ENDING ]
     def draw(self):
-        print "Fin"
+        draw_buffer.append("Fin")
     def changed(self, key):
         if key == ENTER:
             sys.exit()
@@ -895,19 +897,29 @@ class PyRPG:
     def main_loop(self):
         """メインループ"""
         turn = 0
-        while True:
-            # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
-            os.system('cls')
-            self.draw()
-            self.check_event()
-            os.system('cls')
-            self.draw()
-            self.update()
-            turn += 1
-            if debug_print:
-                print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
+        try:
+            while True:
+                # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
+                os.system(CLEAR_SCREEN)
+                self.draw()
+                self.check_event()
+                os.system(CLEAR_SCREEN)
+                self.draw()
+                self.update()
+                turn += 1
+                if debug_print:
+                    print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
+        except:
+            traceback.print_exc()
+        else:
+            print "END"
     def draw(self):
         game.draw()
+        global draw_buffer
+        if len(draw_buffer) != 0:
+            for s in draw_buffer:
+                print s
+            draw_buffer = []
     def update(self):
         """ゲーム状態の更新
             描画があったら is_draw を True
@@ -917,13 +929,15 @@ class PyRPG:
             if os.name == "nt":
                 raw = get_input()
             else:
-                time.sleep(0.3)
+                time.sleep(0.5)
     def check_event(self):
         key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
         if os.name == "nt":
             raw = ord(get_input())
         else:
-            raw = ord(raw_input())
+            raw = raw_input()
+            if len(raw) == 1:
+                raw = ord(raw)
             if raw == "":
                 game.changed(self.last_key)
                 return
@@ -940,6 +954,8 @@ player = CharacterBase()
 debug_print = False
 # debug_print = True
 random.seed(1)
+draw_buffer = []
+update_buffer = []
 
 if __name__ == "__main__":
     PyRPG()
