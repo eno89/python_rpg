@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
-# ver 1.03
+# ver 1.04
 import random
 import sys, os, traceback
 import time
@@ -13,6 +13,8 @@ else:
 
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
+#------------------------------------------------------------------------------
+
 #------------------------------------------------------------------------------
 class GameBase:
     TITLE, EVENT, TOWN, FIELD, MENU, BATTLE, ENDING = range(7)
@@ -118,8 +120,16 @@ class Title(GameBase):
         self.game_state = [GameBase.TITLE]
         self.select = self.START
         self.selects = ["START","CONTINUE", "EXIT"]
+        #
+        self.is_action = False
     def draw(self):
         draw_select(self.select, self.selects)
+    def update(self):
+        if self.is_action:
+            global game, party
+            game_stack.append(Town(Town.KINGDOM))
+            game = Event(Event.EVENT_OPENING)
+            party = Party( create_player() )
     def changed(self, key):
         if key == DOWN:
             self.select = forward_select(self.select, len(self.selects))
@@ -127,10 +137,7 @@ class Title(GameBase):
             self.select = back_select(self.select, len(self.selects))
         elif key == ENTER:
             if self.select == Title.START:
-                global game, player
-                game_stack.append(Town(Town.KINGDOM))
-                game = Event(Event.EVENT_OPENING)
-                player = create_player()
+                self.is_action = True
             elif self.select == Title.CONTINUE:
                 pass
             elif self.select == Title.EXIT:
@@ -164,7 +171,7 @@ class Event(GameBase):
             if   self.event_state == Event.EVENT_OPENING:
                 items =  [Wepon(u"棍棒", 3, 20),Wepon(u"銅剣", 5, 60)]
                 for item in items:
-                    player.add_item(item)
+                    party.add_item(item)
                 game = game_stack.pop()
             elif self.event_state == Event.EVENT_TOWN_TALK:
                 game = game_stack.pop()
@@ -212,7 +219,7 @@ def kingdom_action(select):
     SLEEP, MENU, NEXT = range(3)
     global game
     if select == SLEEP:
-        player.recover()
+        party.recover()
         update_buffer.append(u"全回復した")
         return True
     elif select == MENU:
@@ -229,7 +236,7 @@ def town_1_action(select):
         game_stack.append(game)
         game = Event(Event.EVENT_TOWN_TALK)
     elif select == SLEEP:
-        player.recover()
+        party.recover()
         update_buffer.append(u"全回復した")
         return True
     elif select == MENU:
@@ -245,7 +252,7 @@ def maou_action(select):
     SLEEP, MENU, BACK, FIGHT = range(4)
     global game
     if select == SLEEP:
-        player.recover()
+        party.recover()
         update_buffer.append(u"全回復した")
         return True
     elif select == MENU:
@@ -394,7 +401,7 @@ class SMenuStatus():
         head = " " * self.depth * 2
         draw_buffer.append( head + "--------" )
         draw_buffer.append( head + u"ステータス")
-        player.show(self.depth)
+        party.show(self.depth)
     def sub_update(self):
         pass
     def sub_changed(self, key):
@@ -413,7 +420,9 @@ class SMenuEquipment():
         #
         self.subgame = None
         self.subgames_common = SEquipmentWeponAromor
-        self.subgames_arg = [player.wepon, player.armor]
+        # x
+        self.player = party.group[party.select]
+        self.subgames_arg = [self.player.wepon, self.player.armor]
     def draw(self):
         head = " " * self.depth * 2
         draw_buffer.append( head + "--------" )
@@ -421,7 +430,7 @@ class SMenuEquipment():
         #
         selects2 = []
         for i in range(len(self.selects)):
-            selects2.append(self.selects[i] + " " + player.str_equipment(i))
+            selects2.append(self.selects[i] + " " + self.player.str_equipment(i))
         draw_select(self.select, selects2,self.depth)
         #
         if self.subgame is not None:
@@ -467,7 +476,7 @@ class SEquipmentWeponAromor(SubGame):
         # 装備の交換，交換できたなら選択を更新
         if self.is_action:
             self.is_action = False
-            is_change = player.change_item(0, self.sub_select)
+            is_change = party.change_item(0, self.sub_select)
             if is_change:
                 self.sub_selects = create_sub_selects(self.equipment)
     def sub_changed(self, key):
@@ -521,7 +530,7 @@ class Battle(GameBase):
         self.selects = [u"戦う",u"逃げる"]
     def draw(self):
         # プレイヤー
-        player.show(0)
+        party.show(0)
         # 敵
         self.enemys.show()
         # 選択肢
@@ -538,7 +547,7 @@ class Battle(GameBase):
             # 敵の行動の更新
             if self.enemys.is_living() == True:
                 self.enemys.do_attack()
-                player.battle_update()
+                party.battle_update()
     def changed(self, key):
         if self.subgame is None:
             if key == DOWN:
@@ -586,8 +595,8 @@ class BattleFight():
         self.enemys.receive()
         if self.enemys.is_living() == False:
             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
-            player.add_exp(self.enemys.get_exp())
-            player.add_money(self.enemys.get_money())
+            party.add_exp(self.enemys.get_exp())
+            party.add_money(self.enemys.get_money())
             global game
             if self.enemys.event is None:
                 game = game_stack.pop()
@@ -596,8 +605,8 @@ class BattleFight():
     def magic(self):
         pass
     def defense(self):
-        player.is_defense = True
-        update_buffer.append( u"%s は 防御した" % (player.name) )
+        party.do_defense()
+        update_buffer.append( u"%s は 防御した" % (party.get_name()) )
     pass
 
 class BattleEscape():
@@ -608,7 +617,7 @@ class BattleEscape():
         head = " " * self.depth * 2
         draw_buffer.append( head + "--------" )
     def sub_battle_update(self):
-        battle_end = player.escape()
+        battle_end = party.escape()
         return battle_end, True
     def sub_changed(self, key):
         pass
@@ -697,18 +706,21 @@ class GroupEnemy(Group):
         for e in self.group:
             if e.is_living():
                 update_buffer.append( u"%s の攻撃" % (e.name) )
-                damage = calc_damage_def(e, player)
-                update_buffer.append( u"%s に %3d" % (player.name, damage) )
-                player.receive_damage(damage)
+                select = party.rand_select()
+                damage = calc_damage_def(e, party.group[select])
+                update_buffer.append( u"%s に %3d" % (party.get_name(), damage) )
+                party.group[select].receive_damage(damage)
     def receive(self):
-        llist = self.livinglist()
-#         r = random.randint(0, sum(llist) - 1)
-        r = sum(llist) - 1
-        e = self.group[r]
-        update_buffer.append( u"%s の攻撃" % (player.name) )
-        damage = calc_damage_atk(player, e)
-        update_buffer.append( u"%s に %3d" % (e.name, damage) )
-        e.receive_damage(damage)
+        for player in party.group:
+            llist = self.livinglist()
+            r = sum(llist) - 1
+            e = self.group[r]
+            update_buffer.append( u"%s の攻撃" % (player.name) )
+            damage = calc_damage_atk(player, e)
+            update_buffer.append( u"%s に %3d" % (e.name, damage) )
+            e.receive_damage(damage)
+            if not self.is_living():
+                return
     def get_name(self):
         return self.group[0].name
     def get_exp(self):
@@ -725,8 +737,67 @@ class GroupEnemy(Group):
         self.event = ev
 
 class Party(Group):
-    pass
+    def __init__ (self, *players):
+        Group.__init__(self, *players)
+        #
+        self.money = 0
+        self.select = 0
+    def show(self, depth):
+        head = " " * depth * 2
+        if game.game_state[0] == GameBase.MENU:
+            if game.game_state[1] == Menu.STATUS:
+                draw_buffer.append( head + u"お金 %5d" % ( self.money) )
+        for e in self.group:
+            if e.is_living():
+                e.show(depth)
+            else:
+                e.show_death(depth)
+    def battle_update(self):
+        for e in self.group:
+            e.battle_update()
+    def change_item(self, select_type, select_num):
+        return self.group[self.select].change_item(select_type, select_num)
+#         return self.group[self.select].change_item(0, self.sub_select)
+    def add_money(self, money):
+        st = u"お金 +%3d" % (money)
+        update_buffer.append(st)
+        self.money += money
+    def add_exp(self, exp):
+        ex = exp / len(self.group)
+        for e in self.group:
+            e.add_exp(ex)
+    def get_name(self):
+        return self.group[self.select].name
+    def rand_select(self):
+        return 0
+    def do_defense(self):
+        self.group[self.select].is_defense = True
+    def escape(self):
+        if random.random() <= self.escape_value:
+            global game
+            game = game_stack.pop()
+            update_buffer(u"逃げ出した")
+            return True
+        else:
+            update_buffer(u"逃げるのに失敗した")
+            return False
+    def add_item(self, item):
+        self.group[self.select].add_item(item)
+    def recover(self):
+        for e in self.group:
+            e.recover()
+#     def receive_damage(self, damage):
+#         self.hp  -= damage
+#         if self.is_living():
+#             st = u"%s たちは 倒れた" % (self.group[0].name)
+#             update_buffer.append(st)
+#             global game
+#             global game_stack
+#             del game_stack[:]
+#             game = Title()
+#             self.recover()
 
+#-------
 class Character:
     """ プレイヤー，敵，味方，NPC """
     def __init__ (self, name, hp, attack, defense):
@@ -762,7 +833,6 @@ class Player(Character):
         self.inc_defense = inc_defense
         self.inc_exp = inc_exp
         self.exp = 0
-        self.money = 0
         self.lv = 1
         self.next_exp = self.lv * self.inc_exp
         self.inc_hp = inc_hp
@@ -771,11 +841,12 @@ class Player(Character):
         self.escape_value = 0.5
         #
         self.is_defense = False
+    def show_death(self, depth):
+        draw_buffer.append( head +  u"%s Death" % ( self.name ) )
     def show(self, depth):
         head = " " * depth * 2
         if game.game_state[0] == GameBase.MENU:
             if game.game_state[1] == Menu.STATUS:
-                draw_buffer.append( head + u"お金 %5d" % ( self.money) )
                 draw_buffer.append( head + u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense) )
                 draw_buffer.append( head + u"        %s %+3d %s %+3d" % (self.wepon[0].name, self.wepon[0].value, self.armor[0].name, self.armor[0].value) )
                 draw_buffer.append( head + u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp)) )
@@ -807,10 +878,6 @@ class Player(Character):
                 update_buffer.append(st)
             return True
         return False
-    def add_money(self, money):
-        st = u"お金 +%3d" % (money)
-        update_buffer.append(st)
-        self.money += money
     def add_exp(self, exp):
         st =  u"EXP +%3d" % (exp)
         update_buffer.append(st)
@@ -837,15 +904,6 @@ class Player(Character):
             self.recover()
     def recover(self):
         self.hp = self.max_hp
-    def escape(self):
-        if random.random() <= self.escape_value:
-            global game
-            game = game_stack.pop()
-            update_buffer.append(u"逃げ出した")
-            return True
-        else:
-            update_buffer.append(u"逃げるのに失敗した")
-            return False
     def battle_update(self):
         self.is_defense = False
 
@@ -892,7 +950,6 @@ class PyRPG:
         # 終了は sys.exit()
     def main_loop(self):
         """メインループ"""
-        turn = 0
         try:
             while is_loop:
                 # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
@@ -902,9 +959,10 @@ class PyRPG:
                 os.system(CLEAR_SCREEN)
                 self.draw()
                 self.update()
-                turn += 1
+                global game_turn
+                game_turn += 1
                 if debug_print:
-                    print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], turn)
+                    print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], game_turn)
         except:
             traceback.print_exc()
         else:
@@ -949,17 +1007,19 @@ class PyRPG:
             is_loop = False
 
 #------------------------------------------------------------------------------
+# game の更新は update
 game = GameBase()
 game_stack = []
-player = CharacterBase()
-party = Party()
-debug_print = False
-# debug_print = True
-random.seed(1)
+game_turn = 0
+is_loop = True
+party = None
+
 draw_buffer = []
 update_buffer = []
 
-is_loop = True
+debug_print = False
+# debug_print = True
 
+random.seed(1)
 if __name__ == "__main__":
     PyRPG()
