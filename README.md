@@ -1,21 +1,14 @@
 
 http://home.wlu.edu/~levys/software/kbhit.py
 
-12
-399
-227
-94
-648
-a = [12+94, 399, 143]
-s = sum(a)
-
 http://support.microsoft.com/kb/99261/ja
 
-        a = [14, 665, 807, 878]
-        s = []
-        for e in range(len(a)-1):
-          s.append(a[e+1] - a[e])
+ar = [14, 665, 807, 878]
+ar = [16,146,670,929,1028]
+br = []
+for e in range(len(ar)-1):
+	br.append(ar[e+1] - ar[e])
 
-        s[-1] += a[0]
-        for e in s:
-          print e*1.0/a[-1]
+br[-1] += ar[0]
+for e in br: print "%4d  %3.1f" % (e, e * 100.0/ar[-1])
+

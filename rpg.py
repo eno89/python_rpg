@@ -11,17 +11,14 @@ if os.name == "nt":
 else:
     CLEAR_SCREEN = 'clear'
 
-
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
 #------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
+# Game System
 class GameBase:
     TITLE, EVENT, TOWN, FIELD, MENU, BATTLE, ENDING = range(7)
     STATE_NAME = ["TITLE", "EVENT", "TOWN", "FIELD", "MENU", "BATTLE", "ENDING" ]
     def __init__(self):
         self.game_state = []
-        pass
     def draw(self):
         pass
     def update(self):
@@ -215,84 +212,6 @@ class Town(GameBase):
         elif key == ENTER:
             self.is_action = True
 
-def kingdom_action(select):
-    SLEEP, MENU, NEXT = range(3)
-    global game
-    if select == SLEEP:
-        party.recover()
-        update_buffer.append(u"全回復した")
-        return True
-    elif select == MENU:
-        game_stack.append(game)
-        game = Menu()
-    elif select == NEXT:
-        game = Field(Field.GRASSLAND_1)
-    return False
-
-def town_1_action(select):
-    TALK, SLEEP, MENU, BACK, NEXT = range(5)
-    global game
-    if   select == TALK:
-        game_stack.append(game)
-        game = Event(Event.EVENT_TOWN_TALK)
-    elif select == SLEEP:
-        party.recover()
-        update_buffer.append(u"全回復した")
-        return True
-    elif select == MENU:
-        game_stack.append(game)
-        game = Menu()
-    elif select == BACK:
-        game = Field(Field.GRASSLAND_1, True)
-    elif select == NEXT:
-        game = Field(Field.MOUNTAIN_1)
-    return False
-
-def maou_action(select):
-    SLEEP, MENU, BACK, FIGHT = range(4)
-    global game
-    if select == SLEEP:
-        party.recover()
-        update_buffer.append(u"全回復した")
-        return True
-    elif select == MENU:
-        game_stack.append(game)
-        game = Menu()
-    elif select == BACK:
-        game = Field(Field.MOUNTAIN_1, True)
-    elif select == FIGHT:
-        game = Event(Event.EVENT_MAOU_BEGIN)
-    return False
-
-class CreateTown():
-    STATE, NAME, SELECTS, ACTION = range(4)
-    def __init__(self):
-        self.elements = []
-        #
-        state = Town.KINGDOM
-        name = u"王都"
-        selects = [ u"泊まる",u"メニューを開く", u"出発する"]
-        e = [ state, name, selects, kingdom_action]
-        self.elements.append(e)
-        #
-        state = Town.TOWN_1
-        name = u"町"
-        selects = [u"話す", u"泊まる",u"メニューを開く", u"戻る", u"出発する"]
-        e = [ state, name, selects, town_1_action]
-        self.elements.append(e)
-        #
-        state = Town.MAOU
-        name = u"魔王城"
-        selects = [u"回復ポイント",u"メニューを開く", u"戻る", u"戦う"]
-        e = [ state, name, selects, maou_action]
-        self.elements.append(e)
-    def load_file(self, file_name):
-        pass
-    def create(self, state):
-        return self.elements[state]
-
-create_town = CreateTown()
-
 #--------------------------------------
 class Field(GameBase):
     GRASSLAND_1, MOUNTAIN_1 = range(2)
@@ -341,22 +260,6 @@ class Field(GameBase):
             game = Menu()
     def reverse(self):
         self.move = self.distance
-
-class CreateField():
-    STATE, DISTANCE, ENCOUNTER, START, ARRIVE = range(5)
-    def __init__(self):
-        self.elements = []
-        #
-        e = [ Field.GRASSLAND_1, 5 ,0.2, Town.KINGDOM, Town.TOWN_1 ]
-        self.elements.append(e)
-        e = [ Field.MOUNTAIN_1, 20 ,0.2, Town.TOWN_1, Town.MAOU ]
-        self.elements.append(e)
-    def load_file(self, file_name):
-        pass
-    def create(self, field_state):
-        return self.elements[field_state]
-
-create_field = CreateField()
 
 #--------------------------------------
 class Menu(GameBase):
@@ -634,39 +537,7 @@ class Ending(GameBase):
             is_loop = False
 
 #------------------------------------------------------------------------------
-class RandomEnemys():
-    def __init__(self, encounter, rmax=3):
-        self.encounter = encounter
-        self.rmax = rmax
-    def create(self):
-        r = random.randint(1,self.rmax)
-        enemys = GroupEnemy()
-        st = ["A","B","C"]
-        for i in range(r):
-            enemys.append(create_common(st[i]))
-        return enemys
-    def check_encounter(self):
-        if random.random() <= self.encounter:
-            update_buffer.append( u"敵が現れた" )
-            global game
-            game_stack.append(game)
-            enemys = self.create()
-            game = Battle(enemys)
-            return True
-        return False
-
-def create_boss():
-    boss = Enemy(u"魔王", 300, 10, 10, 1000, 1000)
-    return boss
-
-def create_common(name):
-    enemy = Enemy(u"スライム"+name, 30, 5, 5, 10, 5)
-    return enemy
-
-def create_player():
-    player = Player(u"勇者", 100, 10, 10, 10, 4, 2, 10)
-    return player
-
+# Character
 class CharacterBase:
     def __init__ (self):
         pass
@@ -695,7 +566,6 @@ class Group:
             if self.group[i].is_living():
                 lives[i] = 1
         return lives
-
 
 class GroupEnemy(Group):
     def __init__ (self, *enemys):
@@ -757,7 +627,6 @@ class Party(Group):
             e.battle_update()
     def change_item(self, select_type, select_num):
         return self.group[self.select].change_item(select_type, select_num)
-#         return self.group[self.select].change_item(0, self.sub_select)
     def add_money(self, money):
         st = u"お金 +%3d" % (money)
         update_buffer.append(st)
@@ -772,14 +641,20 @@ class Party(Group):
         return 0
     def do_defense(self):
         self.group[self.select].is_defense = True
+    def get_escape_value(self):
+        s = 0
+        for e in self.group:
+            s += e.escape_value
+        s /= len(self.group)
+        return s
     def escape(self):
-        if random.random() <= self.escape_value:
+        if random.random() <= self.get_escape_value():
             global game
             game = game_stack.pop()
-            update_buffer(u"逃げ出した")
+            update_buffer.append(u"逃げ出した")
             return True
         else:
-            update_buffer(u"逃げるのに失敗した")
+            update_buffer.append(u"逃げるのに失敗した")
             return False
     def add_item(self, item):
         self.group[self.select].add_item(item)
@@ -927,6 +802,164 @@ class Armor(Item):
         Item.__init__(self, name, defense, price)
 
 #------------------------------------------------------------------------------
+# Data
+class CreateTownAction():
+    TALK, SLEEP, SLEEP2, MENU, BACK, NEXT, FIGHT = range(7)
+    selects_dict = { TALK:u"話す", SLEEP:u"泊まる", SLEEP2:u"回復ポイント", MENU:u"メニューを開く", BACK:u"戻る", NEXT:u"出発する", FIGHT:u"戦う" }
+    def action(select, event_state = -1, field_state_back = -1, field_state_next = -1 ):
+        global game
+        if   select == TALK:
+            if event_state != -1:
+                game_stack.append(game)
+                game = Event(event_state)
+        elif select == SLEEP or select == SLEEP2:
+            party.recover()
+            update_buffer.append(u"全回復した")
+        elif select == MENU:
+            game_stack.append(game)
+            game = Menu()
+        elif select == BACK:
+            if field_state_back != -1:
+                game = Field(field_state_back, True)
+        elif select == NEXT:
+            if field_state_next != -1:
+                game = Field(field_state_next)
+        elif select == FIGHT:
+            if event_state != -1:
+                game = Event(event_state)
+
+def kingdom_action(select):
+    SLEEP, MENU, NEXT = range(3)
+    global game
+    if select == SLEEP:
+        party.recover()
+        update_buffer.append(u"全回復した")
+        return True
+    elif select == MENU:
+        game_stack.append(game)
+        game = Menu()
+    elif select == NEXT:
+        game = Field(Field.GRASSLAND_1)
+    return False
+
+def town_1_action(select):
+    TALK, SLEEP, MENU, BACK, NEXT = range(5)
+    global game
+    if   select == TALK:
+        game_stack.append(game)
+        game = Event(Event.EVENT_TOWN_TALK)
+    elif select == SLEEP:
+        party.recover()
+        update_buffer.append(u"全回復した")
+        return True
+    elif select == MENU:
+        game_stack.append(game)
+        game = Menu()
+    elif select == BACK:
+        game = Field(Field.GRASSLAND_1, True)
+    elif select == NEXT:
+        game = Field(Field.MOUNTAIN_1)
+    return False
+
+def maou_action(select):
+    SLEEP, MENU, BACK, FIGHT = range(4)
+    global game
+    if select == SLEEP:
+        party.recover()
+        update_buffer.append(u"全回復した")
+        return True
+    elif select == MENU:
+        game_stack.append(game)
+        game = Menu()
+    elif select == BACK:
+        game = Field(Field.MOUNTAIN_1, True)
+    elif select == FIGHT:
+        game = Event(Event.EVENT_MAOU_BEGIN)
+    return False
+
+class CreateTown():
+    STATE, NAME, SELECTS, ACTION = range(4)
+    TALK, SLEEP, SLEEP2, MENU, BACK, NEXT, FIGHT = range(7)
+    selects_dict = { TALK:u"話す", SLEEP:u"泊まる", SLEEP2:u"回復ポイント", MENU:u"メニューを開く", BACK:u"戻る", NEXT:u"出発する", FIGHT:u"戦う" }
+    def __init__(self):
+        self.elements = []
+        #
+        state = Town.KINGDOM
+        name = u"王都"
+        selects = [ u"泊まる",u"メニューを開く", u"出発する"]
+        e = [ state, name, selects, kingdom_action]
+        self.elements.append(e)
+        #
+        state = Town.TOWN_1
+        name = u"町"
+        selects = [u"話す", u"泊まる",u"メニューを開く", u"戻る", u"出発する"]
+        e = [ state, name, selects, town_1_action]
+        self.elements.append(e)
+        #
+        state = Town.MAOU
+        name = u"魔王城"
+        selects = [u"回復ポイント",u"メニューを開く", u"戻る", u"戦う"]
+        e = [ state, name, selects, maou_action]
+        self.elements.append(e)
+    def load_file(self, file_name):
+        pass
+    def create(self, state):
+        return self.elements[state]
+
+create_town = CreateTown()
+
+#--------------------------------------
+class CreateField():
+    STATE, DISTANCE, ENCOUNTER, START, ARRIVE = range(5)
+    def __init__(self):
+        self.elements = []
+        #
+        e = [ Field.GRASSLAND_1, 5 ,0.2, Town.KINGDOM, Town.TOWN_1 ]
+        self.elements.append(e)
+        e = [ Field.MOUNTAIN_1, 20 ,0.2, Town.TOWN_1, Town.MAOU ]
+        self.elements.append(e)
+    def load_file(self, file_name):
+        pass
+    def create(self, field_state):
+        return self.elements[field_state]
+
+create_field = CreateField()
+
+class RandomEnemys():
+    def __init__(self, encounter, rmax=3):
+        self.encounter = encounter
+        self.rmax = rmax
+    def create(self):
+        r = random.randint(1,self.rmax)
+        enemys = GroupEnemy()
+        st = ["A","B","C"]
+        for i in range(r):
+            enemys.append(create_common(st[i]))
+        return enemys
+    def check_encounter(self):
+        if random.random() <= self.encounter:
+            update_buffer.append( u"敵が現れた" )
+            global game
+            game_stack.append(game)
+            enemys = self.create()
+            game = Battle(enemys)
+            return True
+        return False
+
+def create_boss():
+    boss = Enemy(u"魔王", 300, 10, 10, 1000, 1000)
+    return boss
+
+def create_common(name):
+    enemy = Enemy(u"スライム"+name, 30, 5, 5, 10, 5)
+    return enemy
+
+def create_player():
+    player = Player(u"勇者", 100, 10, 10, 10, 4, 2, 10)
+    return player
+
+#------------------------------------------------------------------------------
+# Game System
 def get_input():
     ''' 文字で返す '''
     corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
@@ -1006,9 +1039,9 @@ class PyRPG:
             global is_loop
             is_loop = False
 
-#------------------------------------------------------------------------------
+#--------------------------------------
 # game の更新は update
-game = GameBase()
+game = None
 game_stack = []
 game_turn = 0
 is_loop = True
@@ -1023,3 +1056,5 @@ debug_print = False
 random.seed(1)
 if __name__ == "__main__":
     PyRPG()
+
+#------------------------------------------------------------------------------
