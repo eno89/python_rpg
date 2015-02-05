@@ -45,3 +45,6 @@ NameError: name 'hello' is not defined
 2
 
 http://d.hatena.ne.jp/yatt/20101122/1290430023
+
+curses は unicode x 日本語ダメなので
+pykbhit.py を借りる

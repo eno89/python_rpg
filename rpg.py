@@ -1,17 +1,135 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
-# ver 1.04
+# ver 1.05
 import random
 import sys, os, traceback
 import time
 # Windows
+
 if os.name == "nt":
     import msvcrt
-    CLEAR_SCREEN = 'cls'
+    class GameInput(object):
+        def clear(self):
+            CLEAR_SCREEN = 'cls'
+            os.system(CLEAR_SCREEN)
+        def get_input(self):
+            ''' 文字で返す '''
+            corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
+            while True:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    if ch == '\000' or ch == '\xe0':
+                        ch = msvcrt.getch()
+                        c = ord(ch)
+                        if c in corsors:
+                            ch = corsors[c]
+                    return ch
+        def get_key(self):
+            key = -1
+            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
+            raw_ch = get_input()
+            raw_ord = ord(raw_ch)
+            if raw_ord in key_dict:
+                key = key_dict[raw_ord]
+            elif raw_ord == ord("Q"):
+                key = FINISH
+            return key
+        def wait(self):
+            raw = get_input()
+        def finish(self):
+            pass
+elif False:
+# elif True:
+    class GameInput(object):
+        def __init__(self):
+            self.last_key = NONE
+        def clear(self):
+            CLEAR_SCREEN = 'clear'
+            os.system(CLEAR_SCREEN)
+        def print_buffer(self, buff):
+            for e in buff:
+                print e
+        def get_key(self):
+            key = -1
+            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
+            raw_ch = raw_input()
+            if raw_ch == "":
+                return self.last_key
+            if len(raw_ch) == 1:
+                raw_ord = ord(raw_ch)
+                if raw_ord in key_dict:
+                    key = key_dict[raw_ord]
+                    self.last_key = key
+                elif raw_ord == ord("Q"):
+                    key = FINISH
+            return key
+        def wait(self):
+            time.sleep(0.5)
+        def finish(self):
+            pass
 else:
-    CLEAR_SCREEN = 'clear'
+    import curses
+    class GameInput(object):
+        def __init__(self):
+            self.last_key = NONE
+            self.screen = curses.initscr()
+            curses.noecho()
+            curses.cbreak()
+            self.screen.keypad(1)
+        def clear(self):
+            self.screen.clear()
+        def get_input_ord(self):
+            corsors = {curses.KEY_UP:"k", curses.KEY_RIGHT:"l", curses.KEY_DOWN:"j", curses.KEY_LEFT:"h"}
+            raw = self.screen.getch()
+            if raw in corsors:
+                ch = corsors[raw]
+                return ord(ch)
+            return raw
+        def print_buffer(self, buff):
+            for e in buff:
+                self.screen.addstr(e+"\n")
+        def get_key(self):
+            key = -1
+            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
+            raw_ord = self.get_input_ord()
+            if raw_ord in key_dict:
+                key = key_dict[raw_ord]
+            elif raw_ord == ord("Q"):
+                key = FINISH
+            return key
+        def wait(self):
+            time.sleep(0.5)
+        def finish(self):
+            curses.nocbreak()
+            self.screen.keypad(0)
+            curses.echo()
+            curses.endwin()
+# else:
+#     class GameInput(object):
+#         def __init__(self):
+#             self.last_key = NONE
+#         def clear(self):
+#             CLEAR_SCREEN = 'clear'
+#             os.system(CLEAR_SCREEN)
+#         def get_input(self):
+#             raw = raw_input()
+#             ''' 文字で返す '''
+#             corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
+#             while True:
+#                 if msvcrt.kbhit():
+#                     ch = msvcrt.getch()
+#                     if ch == '\000' or ch == '\xe0':
+#                         ch = msvcrt.getch()
+#                         c = ord(ch)
+#                         if c in corsors:
+#                             ch = corsors[c]
+#                     return ch
+#         def wait(self):
+#             time.sleep(0.5)
+#         def finish(self):
+#             pass
 
-NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL = range(7)
+NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL, FINISH = range(8)
 #------------------------------------------------------------------------------
 # Game System
 class GameBase:
@@ -960,52 +1078,41 @@ def create_player():
 
 #------------------------------------------------------------------------------
 # Game System
-def get_input():
-    ''' 文字で返す '''
-    corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
-    while True:
-        if msvcrt.kbhit():
-            ch = msvcrt.getch()
-            if ch == '\000' or ch == '\xe0':
-                ch = msvcrt.getch()
-                c = ord(ch)
-                if c in corsors:
-                    ch = corsors[c]
-            return ch
 
 class PyRPG:
     def __init__(self):
         global game
         game = Title()
-        self.last_key = NONE
+        self.os_system = GameInput()
         # メインループを起動
         self.main_loop()
-        # 終了は sys.exit()
     def main_loop(self):
         """メインループ"""
         try:
             while is_loop:
                 # 画面クリア，描画，キー入力，イベント処理，イベント処理キー入力
-                os.system(CLEAR_SCREEN)
+                self.os_system.clear()
                 self.draw()
                 self.check_event()
-                os.system(CLEAR_SCREEN)
+                self.os_system.clear()
                 self.draw()
                 self.update()
                 global game_turn
                 game_turn += 1
                 if debug_print:
-                    print "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], game_turn)
+                    st = "------------- %s %3d" % (GameBase.STATE_NAME[game.game_state[0]], game_turn)
+                    self.os_system.print_buffer([st])
         except:
+            self.os_system.finish()
             traceback.print_exc()
         else:
-            print "GAME END"
+            st = "GAME END"
+            self.os_system.print_buffer([st])
     def draw(self):
         game.draw()
         global draw_buffer
         if len(draw_buffer) != 0:
-            for s in draw_buffer:
-                print s
+            self.os_system.print_buffer(draw_buffer)
             draw_buffer = []
     def update(self):
         """ゲーム状態の更新
@@ -1014,30 +1121,17 @@ class PyRPG:
         game.update()
         global update_buffer
         if len(update_buffer) != 0:
-            for s in update_buffer:
-                print s
+            self.os_system.print_buffer(update_buffer)
             update_buffer = []
-            if os.name == "nt":
-                raw = get_input()
-            else:
-                time.sleep(0.5)
+            self.os_system.wait()
     def check_event(self):
-        key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
-        if os.name == "nt":
-            raw = ord(get_input())
-        else:
-            raw = raw_input()
-            if len(raw) == 1:
-                raw = ord(raw)
-            if raw == "":
-                game.changed(self.last_key)
-                return
-        if raw in key_dict:
-            self.last_key = key_dict[raw]
-            game.changed(self.last_key)
-        elif raw == ord("Q"):
+        key = self.os_system.get_key()
+        if key == FINISH:
             global is_loop
             is_loop = False
+        elif key != -1:
+            game.changed(key)
+
 
 #--------------------------------------
 # game の更新は update
@@ -1050,8 +1144,8 @@ party = None
 draw_buffer = []
 update_buffer = []
 
-debug_print = False
-# debug_print = True
+# debug_print = False
+debug_print = True
 
 random.seed(1)
 if __name__ == "__main__":
