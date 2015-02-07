@@ -1,17 +1,46 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
 # ver 1.05
-import random
 import sys, os, traceback
-import time
-# Windows
+import random, time
+import termios, atexit
+from select import select
+import traceback
 
+# http://code.activestate.com/recipes/572182-how-to-implement-kbhit-on-linux/
+
+class BaseGameInput(object):
+    def get_key(self):
+        ''' 入力キーの取得 '''
+        key = -1
+        key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
+        ch = self.get_input()
+        raw = ord(ch)
+        if raw in key_dict:
+            key = key_dict[raw]
+        elif raw == ord("Q"):
+            key = FINISH
+        return key
+    def wait(self):
+        self.get_input()
+    def clear(self):
+        os.system(self.CLEAR_SCREEN)
+    def print_buffer(self, buff):
+        for e in buff:
+            print e
+    def getch(self):
+        return ''
+    def kbhit(self):
+        return False
+    def finish(self):
+        pass
+
+# Windows
 if os.name == "nt":
     import msvcrt
-    class GameInput(object):
-        def clear(self):
-            CLEAR_SCREEN = 'cls'
-            os.system(CLEAR_SCREEN)
+    class GameInput(BaseGameInput):
+        def __init__(self):
+            self.CLEAR_SCREEN = 'cls'
         def get_input(self):
             ''' 文字で返す '''
             corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
@@ -34,89 +63,50 @@ if os.name == "nt":
             elif raw_ord == ord("Q"):
                 key = FINISH
             return key
-        def wait(self):
-            raw = get_input()
-        def finish(self):
-            pass
-elif False:
-    class GameInput(object):
-        def __init__(self):
-            self.last_key = NONE
-        def clear(self):
-            CLEAR_SCREEN = 'clear'
-            os.system(CLEAR_SCREEN)
-        def print_buffer(self, buff):
-            for e in buff:
-                print e
-        def get_key(self):
-            key = -1
-            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
-            raw_ch = raw_input()
-            if raw_ch == "":
-                return self.last_key
-            if len(raw_ch) == 1:
-                raw_ord = ord(raw_ch)
-                if raw_ord in key_dict:
-                    key = key_dict[raw_ord]
-                    self.last_key = key
-                elif raw_ord == ord("Q"):
-                    key = FINISH
-            return key
-        def wait(self):
-            time.sleep(0.5)
-        def finish(self):
-            pass
 else:
-#     http://code.activestate.com/recipes/572182-how-to-implement-kbhit-on-linux/
-    import termios, atexit
-    from select import select
-    class GameInput(object):
+    class GameInput(BaseGameInput):
         def __init__(self):
-            fg = sys.stdin.fileno()
-            new_term = termios.tcgetattr(fd)
-            old_term = termios.tcgetattr(fd)
-            new_term[3] = (new_term[3] & ~termios.ICANON & ~termios.ECHO)
-        def set_normal_term():
-            termios.tcsetattr(fd, termios.TCSAFLUSH, old_term)
-        def set_curses_term():
-            termios.tcsetattr(fd, termios.TCSAFLUSH, old_term)
-        def putch(ch):
-            sys.stdout.write(ch)
-        def getch(ch):
-            return sys.stdin.read(ch)
-        def getche(ch):
-            return sys.stdin.read(ch)
-        def kbhit():
+            self.fd = sys.stdin.fileno()
+            self.new_term = termios.tcgetattr(self.fd)
+            self.old_term = termios.tcgetattr(self.fd)
+            self.new_term[3] = (self.new_term[3] & ~termios.ICANON & ~termios.ECHO)
+            atexit.register(self.set_normal_term)
+            self.set_curses_term()
+            self.CLEAR_SCREEN = 'clear'
+        def __del__(self):
+            # print "game input end"
+            self.set_normal_term()
+        def set_normal_term(self):
+            termios.tcsetattr(self.fd, termios.TCSAFLUSH, self.old_term)
+        def set_curses_term(self):
+            termios.tcsetattr(self.fd, termios.TCSAFLUSH, self.new_term)
+        def getch(self):
+            return sys.stdin.read(1)
+        def kbhit(self):
             dr,dw,de = select([sys.stdin], [], [], 0)
             return dr <> []
-        def clear(self):
-            self.screen.clear()
-        def get_input_ord(self):
-            corsors = {curses.KEY_UP:"k", curses.KEY_RIGHT:"l", curses.KEY_DOWN:"j", curses.KEY_LEFT:"h"}
-            raw = self.screen.getch()
-            if raw in corsors:
-                ch = corsors[raw]
-                return ord(ch)
-            return raw
-        def print_buffer(self, buff):
-            for e in buff:
-                self.screen.addstr(e+"\n")
-        def get_key(self):
-            key = -1
-            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
-            raw_ord = self.get_input_ord()
-            if raw_ord in key_dict:
-                key = key_dict[raw_ord]
-            elif raw_ord == ord("Q"):
-                key = FINISH
-            return key
-        def wait(self):
-            time.sleep(0.5)
-        def finish(self):
-            curses.nocbreak()
-            self.screen.keypad(0)
-            curses.echo()
-            curses.endwin()
+        def getche(self):
+            ch = getch()
+            putch(ch)
+            return ch
+        def putch(self, ch):
+            sys.stdout.write(ch)
+        def get_input(self):
+            ''' 矢印は文字で返す '''
+            corsors = { 65:"k", 66:"j", 67:"l", 68:"h" }
+            while True:
+                if self.kbhit():
+                    ch = self.getch()
+                    if ch == chr(27):
+                        ch = sys.stdin.read(1)
+                        if ch == '[':
+                            ch = sys.stdin.read(1)
+                            c = ord(ch)
+                            if c in corsors:
+                                ch = corsors[c]
+                                return ch
+                    else:
+                        return ch
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL, FINISH = range(8)
 #------------------------------------------------------------------------------
@@ -245,7 +235,8 @@ class Title(GameBase):
             elif self.select == Title.CONTINUE:
                 pass
             elif self.select == Title.EXIT:
-                sys.exit()
+                global is_loop
+                is_loop = False
 
 #--------------------------------------
 class Event(GameBase):
