@@ -39,7 +39,6 @@ if os.name == "nt":
         def finish(self):
             pass
 elif False:
-# elif True:
     class GameInput(object):
         def __init__(self):
             self.last_key = NONE
@@ -68,14 +67,28 @@ elif False:
         def finish(self):
             pass
 else:
-    import curses
+#     http://code.activestate.com/recipes/572182-how-to-implement-kbhit-on-linux/
+    import termios, atexit
+    from select import select
     class GameInput(object):
         def __init__(self):
-            self.last_key = NONE
-            self.screen = curses.initscr()
-            curses.noecho()
-            curses.cbreak()
-            self.screen.keypad(1)
+            fg = sys.stdin.fileno()
+            new_term = termios.tcgetattr(fd)
+            old_term = termios.tcgetattr(fd)
+            new_term[3] = (new_term[3] & ~termios.ICANON & ~termios.ECHO)
+        def set_normal_term():
+            termios.tcsetattr(fd, termios.TCSAFLUSH, old_term)
+        def set_curses_term():
+            termios.tcsetattr(fd, termios.TCSAFLUSH, old_term)
+        def putch(ch):
+            sys.stdout.write(ch)
+        def getch(ch):
+            return sys.stdin.read(ch)
+        def getche(ch):
+            return sys.stdin.read(ch)
+        def kbhit():
+            dr,dw,de = select([sys.stdin], [], [], 0)
+            return dr <> []
         def clear(self):
             self.screen.clear()
         def get_input_ord(self):
@@ -104,30 +117,6 @@ else:
             self.screen.keypad(0)
             curses.echo()
             curses.endwin()
-# else:
-#     class GameInput(object):
-#         def __init__(self):
-#             self.last_key = NONE
-#         def clear(self):
-#             CLEAR_SCREEN = 'clear'
-#             os.system(CLEAR_SCREEN)
-#         def get_input(self):
-#             raw = raw_input()
-#             ''' 文字で返す '''
-#             corsors = {72:"k", 77:"l", 80:"j", 75:"h"}
-#             while True:
-#                 if msvcrt.kbhit():
-#                     ch = msvcrt.getch()
-#                     if ch == '\000' or ch == '\xe0':
-#                         ch = msvcrt.getch()
-#                         c = ord(ch)
-#                         if c in corsors:
-#                             ch = corsors[c]
-#                     return ch
-#         def wait(self):
-#             time.sleep(0.5)
-#         def finish(self):
-#             pass
 
 NONE, UP, DOWN, LEFT, RIGHT, ENTER, CANCEL, FINISH = range(8)
 #------------------------------------------------------------------------------
