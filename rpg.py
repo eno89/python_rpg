@@ -422,38 +422,56 @@ class SMenuEquipment():
         #
         self.subgame = None
         self.subgames_common = SEquipmentWeponAromor
-        # x
-        self.player = party.group[party.select]
-        self.subgames_arg = [self.player.wepon, self.player.armor]
+        #
+        self.player_select = 0
+        self.is_pselect = False
     def draw(self):
         head = " " * self.depth * 2
+        #
         draw_buffer.append( head + "--------" )
         draw_buffer.append( head + u"装備" )
         #
-        selects2 = []
-        for i in range(len(self.selects)):
-            selects2.append(self.selects[i] + " " + self.player.str_equipment(i))
-        draw_select(self.select, selects2,self.depth)
+        draw_select(self.player_select, party.get_names(), self.depth)
         #
-        if self.subgame is not None:
-            self.subgame.draw()
+        if self.is_pselect:
+            selects2 = []
+            player = party.group[party.select]
+            for i in range(len(self.selects)):
+                selects2.append(self.selects[i] + " " + player.str_equipment(i))
+            draw_select(self.select, selects2,self.depth)
+            #
+            if self.subgame is not None:
+                self.subgame.draw()
     def sub_update(self):
         if self.subgame is not None:
             self.subgame.sub_update()
     def sub_changed(self, key):
-        if self.subgame is None:
-            if key == DOWN:
-                self.select = forward_select(self.select, len(self.selects))
-            elif key == UP:
-                self.select = back_select(self.select, len(self.selects))
-            elif key == ENTER:
-                self.subgame = self.subgames_common(self.depth+1, self.subgames_arg[self.select])
-            elif key == CANCEL:
-                return True
+        if key == CANCEL:
+            return True
+        if self.is_pselect == False:
+                if key == DOWN:
+                    self.player_select = forward_select(self.player_select, len(party.group))
+                elif key == UP:
+                    self.player_select = back_select(self.player_select, len(party.group))
+                elif key == ENTER:
+                    self.is_pselect = True
+                    party.select = self.player_select
         else:
-            to_none = self.subgame.sub_changed(key)
-            if to_none == True:
-                self.subgame = None
+            if self.subgame is None:
+                if key == DOWN:
+                    self.select = forward_select(self.select, len(self.selects))
+                elif key == UP:
+                    self.select = back_select(self.select, len(self.selects))
+                elif key == ENTER:
+                    player = party.group[party.select]
+                    wepon = [player.wepon] + party.get_wepons()
+                    armor = [player.armor] + party.get_armors()
+                    arg = [wepon, armor]
+                    self.subgame = self.subgames_common(self.depth+1, arg[self.select])
+            else:
+                to_none = self.subgame.sub_changed(key)
+                if to_none == True:
+                    self.subgame = None
         return False
 
 #------------------
@@ -472,7 +490,9 @@ class SEquipmentWeponAromor(SubGame):
         self.depth = depth
         self.is_action = False
     def draw(self):
+        head = " " * self.depth * 2
         SubGame.draw(self)
+        draw_buffer.append(head + party.get_name())
         draw_lr_select(self.sub_select, self.sub_selects, self.depth)
     def sub_update(self):
         # 装備の交換，交換できたなら選択を更新
@@ -494,7 +514,28 @@ class SEquipmentWeponAromor(SubGame):
 
 #----------------------------
 class SMenuItem(SubGame):
-    pass
+    def __init__(self, depth):
+        self.sub_select = 0
+        self.sub_selects = []
+        for e in party.items:
+            self.sub_selects.append(e.name)
+        self.depth = depth
+        self.is_action = False
+    def draw(self):
+        SubGame.draw(self)
+        draw_lr_select(self.sub_select, self.sub_selects, self.depth)
+    def sub_update(self):
+        pass
+    def sub_changed(self, key):
+        if   key == RIGHT:
+            self.sub_select = forward_select(self.sub_select, len(self.sub_selects))
+        elif key == LEFT:
+            self.sub_select = back_select(self.sub_select, len(self.sub_selects))
+        elif key == ENTER:
+            self.is_action = True
+        elif key == CANCEL:
+            return True
+        return False
 
 #--------------------------------------
 def dice(n, m):
@@ -981,6 +1022,7 @@ class Party(Group):
         #
         self.money = 0
         self.select = 0
+        self.items = []
     def show(self, depth):
         head = " " * depth * 2
         if game.game_state[0] == GameBase.MENU:
@@ -1006,8 +1048,27 @@ class Party(Group):
         update_buffer.append(st)
         for e in self.group:
             e.add_exp(ex)
+    def get_armors(self):
+        wepons = []
+        for e in self.items:
+            if isinstance(e, Armor):
+                if e.is_equip == False:
+                    wepons.append(e)
+        return wepons
+    def get_wepons(self):
+        wepons = []
+        for e in self.items:
+            if isinstance(e, Wepon):
+                if e.is_equip == False:
+                    wepons.append(e)
+        return wepons
     def get_name(self):
         return self.group[self.select].name
+    def get_names(self):
+        names = []
+        for e in self.group:
+            names.append(e.name)
+        return names
     def rand_select(self):
         return 0
     def get_escape_value(self):
@@ -1026,7 +1087,13 @@ class Party(Group):
             update_buffer.append(u"逃げるのに失敗した")
             return False
     def add_item(self, item):
-        self.group[self.select].add_item(item)
+        self.items.append(item)
+        st = item.name + u"を手に入れた"
+        update_buffer.append(st)
+#         self.group[self.select].add_item(item)
+    def move_item(self, player, item):
+        player.add_item(item)
+        self.items.remove(item)
     def recover(self):
         for e in self.group:
             e.recover()
@@ -1092,8 +1159,8 @@ class Player(Character):
         self.lv = 1
         self.next_exp = self.lv * self.inc_exp
         self.inc_hp = inc_hp
-        self.wepon = [Wepon(u"なし",0, 0)]
-        self.armor = [Armor(u"なし",0, 0)]
+        self.wepon = Wepon(u"なし",0, 0)
+        self.armor = Armor(u"なし",0, 0)
         self.escape_value = 0.5
         self.name2 = name2
         #
@@ -1113,15 +1180,15 @@ class Player(Character):
         if game.game_state[0] == GameBase.MENU:
             if game.game_state[1] == Menu.STATUS:
                 draw_buffer.append( head + u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense) )
-                draw_buffer.append( head + u"        %s %+3d %s %+3d" % (self.wepon[0].name, self.wepon[0].value, self.armor[0].name, self.armor[0].value) )
+                draw_buffer.append( head + u"        %s %+3d %s %+3d" % (self.wepon.name, self.wepon.value, self.armor.name, self.armor.value) )
                 draw_buffer.append( head + u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp)) )
         if game.game_state[0] == GameBase.BATTLE:
             draw_buffer.append( head +  u"%s HP %3d/%3d  MP %3d/%3d" % ( self.name2, self.hp, self.max_hp, self.mp, self.max_mp) )
     def str_equipment(self, equipment):
         if equipment == SMenuEquipment.WEAPON:
-            return self.wepon[0].name
+            return self.wepon.name
         elif equipment == SMenuEquipment.ARMOR:
-            return self.armor[0].name
+            return self.armor.name
         return ""
     def add_item(self, item):
         # あとでソートを入れる
@@ -1131,15 +1198,27 @@ class Player(Character):
             self.armor.append(item)
         st = item.name + u"を手に入れた"
         update_buffer.append(st)
+    def move_item(self, item):
+        if isinstance(item, Wepon):
+            self.wepon.remove(item)
+        elif isinstance(item, Armor):
+            self.armor.remove(item)
+        party.items.append(item)
     def change_item(self, select_type, select_num):
         if select_num != 0:
+            select_num -= 1
             if select_type == SMenuEquipment.WEAPON:
-                self.wepon[0], self.wepon[select_num] = self.wepon[select_num], self.wepon[0]
-                st = self.wepon[0].name  + u"を装備した"
+                wepons = party.get_wepons()
+                self.wepon.is_equip = False
+#                 wepons[select_num].is_equip = True
+                self.wepon = wepons[select_num]
+                self.wepon.is_equip = True
+                st = self.wepon.name  + u"を装備した"
                 update_buffer.append(st)
             elif select_type == SMenuEquipment.Armor:
-                self.armor[0], self.armor[select_num] = self.armor[select_num], self.armor[0]
-                st = self.armor[0].name + u"を装備した"
+                armors = party.get_armors()
+                self.armor = armors[select_num]
+                st = self.armor.name + u"を装備した"
                 update_buffer.append(st)
             return True
         return False
@@ -1175,6 +1254,7 @@ class Item():
         self.name = name
         self.value = value
         self.price = price
+        self.is_equip = False
     def show(self):
         pass
     def get_value(self):
