@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
-# ver 1.05
+# ver 1.06
 import sys, os, traceback
 import random, time
 import termios, atexit
@@ -223,7 +223,8 @@ class Title(GameBase):
             global game, party
             game_stack.append(Town(Town.KINGDOM))
             game = Event(Event.EVENT_OPENING)
-            party = Party( create_player() )
+            party = Party( create_player1(), create_player2() )
+            party.append( create_player3() )
     def changed(self, key):
         if key == DOWN:
             self.select = forward_select(self.select, len(self.selects))
@@ -519,6 +520,13 @@ def calc_damage_atk(player, enemy):
         damage = 0
     return damage
 
+def calc_damage_atk_magic(player, magic, enemy):
+    atk = magic.attack + player.magic_attack
+    damage = atk  - (enemy.defense)
+    if damage < 0:
+        damage = 0
+    return damage
+
 class Battle(GameBase):
     FIGHT, ESCAPE = range(2)
     def __init__(self, enemys):
@@ -526,9 +534,10 @@ class Battle(GameBase):
         self.enemys = enemys
         #
         self.subgame = None
-        self.subgames = [BattleFight, BattleEscape]
+        self.subgames = [BattleFightParty4, BattleEscape]
         self.select = Battle.FIGHT
         self.selects = [u"戦う",u"逃げる"]
+        self.turn = 0
     def draw(self):
         # プレイヤー
         party.show(0)
@@ -549,6 +558,7 @@ class Battle(GameBase):
             if self.enemys.is_living() == True:
                 self.enemys.do_attack()
                 party.battle_update()
+            self.turn += 1
     def changed(self, key):
         if self.subgame is None:
             if key == DOWN:
@@ -562,38 +572,52 @@ class Battle(GameBase):
             if to_none == True:
                 self.subgame = None
 
-class BattleFight():
+class BattleFightParty4(SubGame):
     ATTACK, MAGIC, DEFFENSE = range(3)
     def __init__(self, enemys, depth):
+        SubGame.__init__(self, depth)
         self.enemys = enemys
-        self.depth = depth
-        #
-        self.selects = [u"攻撃", u"呪文", u"防御"]
-        self.select = 0
-        self.action = None
-        self.actions = [self.attack, self.magic, self.defense]
+        self.player_select = 0
+        self.each_select = [0] * len(party.group)
+        self.each_selects = [u"攻撃", u"呪文", u"防御"]
+        self.each_is_magic = [False] * len(party.group)
+        self.each_select_magic = [0] * len(party.group)
+        self.is_all_action = False
     def draw(self):
-        head = " " * self.depth * 2
-        draw_buffer.append( head + "--------" )
-        draw_select(self.select, self.selects, self.depth)
+        for i in range(len(party.group)):
+            if party.group[i].is_living():
+                player = party.group[i]
+                head = " " * self.depth * 2
+                draw_buffer.append( head + "--------" )
+                draw_buffer.append( head + party.group[i].name)
+                draw_select(self.each_select[i], self.each_selects, self.depth)
+                if self.each_is_magic[i]:
+                    draw_select(self.each_select_magic[i] , player.get_magic_list(), self.depth+1)
+                if i == self.player_select:
+                    break
     def sub_battle_update(self):
-        if self.action is not None:
-            self.action()
-            self.action  = None
-            return False, False
-        return True, False
-    def sub_changed(self, key):
-        if key == DOWN:
-            self.select = forward_select(self.select, len(self.selects))
-        elif key == UP:
-            self.select = back_select(self.select, len(self.selects))
-        elif key == ENTER:
-            self.action = self.actions[self.select]
-        elif key == CANCEL:
-            return True
-        return False
-    def attack(self):
-        self.enemys.receive()
+        if self.is_all_action:
+            for i in range(len(party.group)):
+                if party.group[i].is_living():
+                    player = party.group[i]
+                    if self.each_select[i] == self.ATTACK:
+                        self.enemys.receive(player)
+                    elif self.each_select[i] == self.MAGIC:
+                        magic_select = self.each_select_magic[i]
+                        self.enemys.receive_magick(player, player.magic_list[magic_select])
+                    elif self.each_select[i] == self.DEFFENSE:
+                        player.do_defense()
+                        update_buffer.append( u"%s は 防御した" % player.name )
+                    if self.check():
+                        return True, True
+            self.is_all_action = False
+            self.player_select = 0
+            self.each_select = [0] * len(party.group)
+            self.each_is_magic = [False] * len(party.group)
+            self.each_select_magic = [0] * len(party.group)
+            return False,False
+        return True,False
+    def check(self):
         if self.enemys.is_living() == False:
             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
             party.add_exp(self.enemys.get_exp())
@@ -603,12 +627,254 @@ class BattleFight():
                 game = game_stack.pop()
             else:
                 game = Event(self.enemys.event)
-    def magic(self):
-        pass
+            return True
+        return False
+    def sub_changed(self, key):
+        if key == CANCEL:
+            self.each_is_magic[self.player_select] = False
+            self.player_select -= 1
+            if self.player_select == -1:
+                return True
+        if self.each_is_magic[self.player_select]:
+            if key == DOWN:
+                self.each_select_magic[self.player_select] = forward_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_list()))
+            elif key == UP:
+                self.each_select_magic[self.player_select] = back_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_list()))
+            elif key == ENTER:
+                self.player_select += 1
+                if self.player_select == len(party.group):
+                    self.is_all_action = True
+            return False
+        if key == DOWN:
+            self.each_select[self.player_select] = forward_select(self.each_select[self.player_select], len(self.each_selects))
+        elif key == UP:
+            self.each_select[self.player_select] = back_select(self.each_select[self.player_select], len(self.each_selects))
+        elif key == ENTER:
+            if self.each_select[self.player_select] == self.MAGIC:
+                self.each_is_magic[self.player_select] = True
+            else:
+                self.player_select += 1
+                if self.player_select == len(party.group):
+                    self.is_all_action = True
+        return False
+
+# class BattleFightParty3():
+#     def __init__(self, enemys, depth):
+#         self.enemys = enemys
+#         self.depth = depth
+#         self.is_action = False
+#     def draw(self):
+#         for p in party.group:
+#             if p.is_living():
+#                 p.battle_show()
+#     def sub_battle_update(self):
+#         if self.is_action:
+#             for p in party.group:
+#                 if p.is_living():
+#                     p.action()
+#                     if self.check():
+#                         return
+#             self.is_action = 0
+#             self.select = 0
+#             return False,False
+#         return True,False
+#     def check(self):
+#         if self.enemys.is_living() == False:
+#             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
+#             party.add_exp(self.enemys.get_exp())
+#             party.add_money(self.enemys.get_money())
+#             global game
+#             if self.enemys.event is None:
+#                 game = game_stack.pop()
+#             else:
+#                 game = Event(self.enemys.event)
+#             return True
+#         return False
+#     def sub_changed(self, key):
+#         ret = party.changed(key)
+#         if ret == True:
+#             self.is_action = True
+#
+# class BattleFightParty2():
+#     def __init__(self, enemys, depth):
+#         self.enemys = enemys
+#         self.depth = depth
+#         self.select = 0
+#         self.livelist = party.livinglist()
+#         self.subgame_list = []
+#         for i in range(len(self.livelist)):
+#             self.subgame_list.append(BattleFightPlayer2( party.group[i],self.enemys, depth+1) )
+#         self.is_action = False
+#     def draw(self):
+#         for i in range(len(self.livelist)):
+#             if party.group[i].is_living:
+#                 self.subgame_list[i].draw()
+#                 if i == self.select:
+#                     break
+#     def sub_battle_update(self):
+#         if self.is_action:
+#             for i in range(len(self.livelist)):
+#                 if party.group[i].is_living:
+#                     self.subgame_list[i].sub_battle_update()
+#                     if self.check():
+#                         return True, True
+#                     if i == self.select:
+#                         break
+#             self.is_action = 0
+#             self.select = 0
+#             return False,False
+#         return True,False
+#     def check(self):
+#         if self.enemys.is_living() == False:
+#             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
+#             party.add_exp(self.enemys.get_exp())
+#             party.add_money(self.enemys.get_money())
+#             global game
+#             if self.enemys.event is None:
+#                 game = game_stack.pop()
+#             else:
+#                 game = Event(self.enemys.event)
+#             return True
+#         return False
+#     def sub_changed(self, key):
+#         ret = self.subgame_list[self.select].sub_changed(key)
+#         if ret == 1:
+#             self.select += 1
+#             if self.select == len(self.livelist):
+#                 self.is_action = True
+#         if ret == 2:
+#             self.select -= 1
+#             if self.select == -1:
+#                 return True
+#         return None
+#
+# class BattleFightPlayer2():
+#     ATTACK, MAGIC, DEFFENSE = range(3)
+#     def __init__(self, player, enemys, depth):
+#         self.player = player
+#         self.enemys = enemys
+#         self.depth = depth
+#         #
+#         self.select = 0
+#         self.selects = [u"攻撃", u"呪文", u"防御"]
+#         #
+#         self.subgame = None
+#         self.subgames = [FightPlayerAttack, FightPlayerMagic, FightPlayerDefese]
+#     def draw(self):
+#         head = " " * self.depth * 2
+#         draw_buffer.append( head + "--------" )
+#         draw_select(self.select, self.selects, self.depth)
+#     def sub_battle_update(self):
+#         if self.subgame is not None:
+#             self.subgame()
+#             self.subgame = None
+#             return False, False
+#         return True, False
+#     def sub_changed(self, key):
+#         if self.subgame is None:
+#             if key == DOWN:
+#                 self.select = forward_select(self.select, len(self.selects))
+#             elif key == UP:
+#                 self.select = back_select(self.select, len(self.selects))
+#             elif key == ENTER:
+#                 self.subgame = self.subgames[self.select](self.player, self.enemys, self.depth + 1)
+#                 return 1
+#             elif key == CANCEL:
+#                 return 2
+#         else:
+#             return self.subgame.sub_changed(key)
+#         return 0
+
+class BattleFightPlayer4():
+    def __init__(self, player, enemys, depth):
+        self.player = player
+        self.enemys = enemys
+        self.depth = depth
+        #
+        self.select = 0
+        self.selects = [u"攻撃", u"呪文", u"防御"]
+        #
+        self.subgame = None
+        self.subgames = [FightPlayerAttack, FightPlayerMagic, FightPlayerDefese]
+    def draw(self):
+        head = " " * self.depth * 2
+    def sub_battle_update(self):
+        self.subgame.sub_battle_update()
+        self.subgame = None
+        return False, False
+#         if self.subgame is not None:
+#             self.subgame.sub_battle_update()
+#             self.subgame = None
+#             return False, False
+#         return True, False
+    def sub_changed(self, key):
+        if self.subgame is None:
+            if key == DOWN:
+                self.select = forward_select(self.select, len(self.selects))
+            elif key == UP:
+                self.select = back_select(self.select, len(self.selects))
+            elif key == ENTER:
+                self.subgame = self.subgames[self.select](self.player, self.enemys, self.depth + 1)
+        else:
+            return self.subgame.sub_changed(key)
+        return 0
+
+class BaseFightPlayer(object):
+    def __init__(self, player, enemys, depth):
+        self.player = player
+        self.enemys = enemys
+        self.depth = depth
+    def draw(self):
+        head = " " * self.depth * 2
+        draw_buffer.append( head + "--------" )
+    def sub_battle_update(self):
+        self.action()
+    def sub_changed(self, key):
+        return 1
+
+class FightPlayerAttack(BaseFightPlayer):
+    def __init__(self, player, enemys, depth):
+        super(FightPlayerAttack, self).__init__(player, enemys, depth)
+        self.action = self.attack
+    def attack(self):
+        self.enemys.receive(self.player)
+
+class FightPlayerMagic(BaseFightPlayer):
+    def __init__(self, player, enemys, depth):
+        super(FightPlayerMagic, self).__init__(player, enemys, depth)
+#         self.subgame = None
+#         self.subgames = player.magic_list()
+        self.select = 0
+        self.selects = player.get_magic_list()
+        self.action = None
+#         self.magic = None
+    def sub_battle_update(self):
+        if self.action is not None:
+            self.action()
+            self.action = None
+            self.select = 0
+    def sub_changed(self, key):
+        if key == DOWN:
+            self.select = forward_select(self.select, len(self.selects))
+        elif key == UP:
+            self.select = back_select(self.select, len(self.selects))
+        elif key == ENTER:
+#             self.magic = player.magic_list[self.select]
+            self.action = self.do_magic
+            return 1
+        elif key == CANCEL:
+            return 2
+        return 0
+    def do_magic(self):
+        self.enemys.receive_magick(self.player, self.player.magic_list[self.select])
+
+class FightPlayerDefese(BaseFightPlayer):
+    def __init__(self, player, enemys, depth):
+        super(FightPlayerDefese, self).__init__(player, enemys, depth)
+        self.action = self.defense
     def defense(self):
-        party.do_defense()
-        update_buffer.append( u"%s は 防御した" % (party.get_name()) )
-    pass
+        self.player.do_defense()
+        update_buffer.append( u"%s は 防御した" % self.player.name )
 
 class BattleEscape():
     def __init__(self, enemys, depth):
@@ -636,10 +902,6 @@ class Ending(GameBase):
 
 #------------------------------------------------------------------------------
 # Character
-class CharacterBase:
-    def __init__ (self):
-        pass
-
 class Group:
     def __init__ (self, *characters):
         self.group = []
@@ -678,17 +940,26 @@ class GroupEnemy(Group):
                 damage = calc_damage_def(e, party.group[select])
                 update_buffer.append( u"%s に %3d" % (party.get_name(), damage) )
                 party.group[select].receive_damage(damage)
-    def receive(self):
-        for player in party.group:
-            llist = self.livinglist()
-            r = sum(llist) - 1
-            e = self.group[r]
-            update_buffer.append( u"%s の攻撃" % (player.name) )
-            damage = calc_damage_atk(player, e)
+    def receive_magick(self, player, magic):
+        llist = self.livinglist()
+        r = sum(llist) - 1
+        e = self.group[r]
+        update_buffer.append( u"%s は %s を唱えた" % (player.name, magic.name) )
+        player.mp -= magic.mp
+        if player.mp >= 0:
+            damage = calc_damage_atk_magic(player,magic, e)
             update_buffer.append( u"%s に %3d" % (e.name, damage) )
             e.receive_damage(damage)
-            if not self.is_living():
-                return
+        else:
+            update_buffer.append( u"呪文は失敗した" )
+    def receive(self, player):
+        llist = self.livinglist()
+        r = sum(llist) - 1
+        e = self.group[r]
+        update_buffer.append( u"%s の攻撃" % (player.name) )
+        damage = calc_damage_atk(player, e)
+        update_buffer.append( u"%s に %3d" % (e.name, damage) )
+        e.receive_damage(damage)
     def get_name(self):
         return self.group[0].name
     def get_exp(self):
@@ -731,14 +1002,14 @@ class Party(Group):
         self.money += money
     def add_exp(self, exp):
         ex = exp / len(self.group)
+        st =  u"EXP +%3d" % (ex)
+        update_buffer.append(st)
         for e in self.group:
             e.add_exp(ex)
     def get_name(self):
         return self.group[self.select].name
     def rand_select(self):
         return 0
-    def do_defense(self):
-        self.group[self.select].is_defense = True
     def get_escape_value(self):
         s = 0
         for e in self.group:
@@ -770,6 +1041,13 @@ class Party(Group):
 #             game = Title()
 #             self.recover()
 
+class Magic(object):
+    def __init__ (self, name, mp=0, attack=0):
+        self.name = name
+        self.mp = mp
+        self.attack = attack
+
+
 #-------
 class Character:
     """ プレイヤー，敵，味方，NPC """
@@ -779,12 +1057,17 @@ class Character:
         self.hp = hp
         self.attack = attack
         self.defense = defense
+        self.is_defense = False
+    def battle_update(self):
+        self.is_defense = False
     def show(self):
         pass
     def is_living(self):
         if self.hp <= 0:
             return False
         return True
+    def do_defense(self):
+        self.is_defense = True
 
 class Enemy(Character):
     def __init__ (self, name, hp, attack, defense, exp, money):
@@ -800,7 +1083,7 @@ class Enemy(Character):
         self.hp -= damage
 
 class Player(Character):
-    def __init__ (self, name, hp, attack, defense, inc_hp, inc_attack, inc_defense, inc_exp):
+    def __init__ (self, name, hp, attack, defense, inc_hp, inc_attack, inc_defense, inc_exp, name2, mp=0, inc_mp=0, magic_attack=0, magic_list=[ Magic(u"なし")]):
         Character.__init__(self, name, hp, attack, defense)
         self.inc_attack = inc_attack
         self.inc_defense = inc_defense
@@ -812,8 +1095,17 @@ class Player(Character):
         self.wepon = [Wepon(u"なし",0, 0)]
         self.armor = [Armor(u"なし",0, 0)]
         self.escape_value = 0.5
+        self.name2 = name2
         #
-        self.is_defense = False
+        self.mp = mp
+        self.max_mp = mp
+        self.magic_attack = magic_attack
+        self.magic_list = magic_list
+    def get_magic_list(self):
+        names = []
+        for m in self.magic_list:
+            names.append(m.name)
+        return names
     def show_death(self, depth):
         draw_buffer.append( head +  u"%s Death" % ( self.name ) )
     def show(self, depth):
@@ -824,7 +1116,7 @@ class Player(Character):
                 draw_buffer.append( head + u"        %s %+3d %s %+3d" % (self.wepon[0].name, self.wepon[0].value, self.armor[0].name, self.armor[0].value) )
                 draw_buffer.append( head + u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp)) )
         if game.game_state[0] == GameBase.BATTLE:
-            draw_buffer.append( head +  u"%s %3d/%3d" % ( self.name, self.hp, self.max_hp) )
+            draw_buffer.append( head +  u"%s HP %3d/%3d  MP %3d/%3d" % ( self.name2, self.hp, self.max_hp, self.mp, self.max_mp) )
     def str_equipment(self, equipment):
         if equipment == SMenuEquipment.WEAPON:
             return self.wepon[0].name
@@ -852,8 +1144,6 @@ class Player(Character):
             return True
         return False
     def add_exp(self, exp):
-        st =  u"EXP +%3d" % (exp)
-        update_buffer.append(st)
         self.exp += exp
         while self.exp >= self.next_exp:
             # Lv Up
@@ -863,7 +1153,7 @@ class Player(Character):
             self.max_hp  += self.inc_hp
             self.attack  += self.inc_attack
             self.defense += self.inc_defense
-            st = u"%s は レベル が上がった +MAX_HP %2d +ATK %2d +DEF %3d" % ( self.name, self.inc_hp, self.inc_attack, self.inc_defense)
+            st = u"%s は レベル が上がった +MAX_HP %2d +ATK %2d +DEF %3d +" % ( self.name, self.inc_hp, self.inc_attack, self.inc_defense)
             update_buffer.append(st)
     def receive_damage(self, damage):
         self.hp  -= damage
@@ -877,8 +1167,7 @@ class Player(Character):
             self.recover()
     def recover(self):
         self.hp = self.max_hp
-    def battle_update(self):
-        self.is_defense = False
+        self.mp = self.max_mp
 
 #--------------------------------------
 class Item():
@@ -1052,12 +1341,21 @@ def create_common(name):
     enemy = Enemy(u"スライム"+name, 30, 5, 5, 10, 5)
     return enemy
 
-def create_player():
-    player = Player(u"勇者", 100, 10, 10, 10, 4, 2, 10)
+def create_player1():
+    player = Player(     u"勇者" , 100 , 10 , 10 , 10 , 4 , 2 , 10, name2=u"勇者    " )
+    return player
+
+def create_player2():
+    player = Player(     u"戦士" , 120 , 7  , 13 , 12 , 3 , 3 , 12, name2=u"戦士    " )
+    return player
+
+def create_player3():
+    m = [Magic(u"炎の呪文", 3, 15), Magic(u"氷の呪文", 2, 10)]
+    player = Player( u"魔法使い"  , 80  , 5  , 5  , 7  , 2 , 1 , 8, name2=u"魔法使い", mp = 20, inc_mp = 4, magic_attack=20, magic_list = m )
     return player
 
 #------------------------------------------------------------------------------
-# Game System
+# Game System 2
 
 class PyRPG:
     def __init__(self):
@@ -1124,11 +1422,12 @@ party = None
 draw_buffer = []
 update_buffer = []
 
-# debug_print = False
-debug_print = True
+debug_print = False
+# debug_print = True
 
 random.seed(1)
 if __name__ == "__main__":
     PyRPG()
+
 
 #------------------------------------------------------------------------------
