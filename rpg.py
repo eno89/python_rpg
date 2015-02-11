@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
-# ver 1.07
+# ver 1.08
 import sys, os, traceback
 import random, time
 import termios, atexit
@@ -222,7 +222,7 @@ class Title(GameBase):
         if self.is_action:
             global game, party
             game_stack.append(Town(Town.KINGDOM))
-            game = Event(Event.EVENT_OPENING)
+            game = Event(CE.OPENING)
             party = Party( create_player1(), create_player2() )
             party.append( create_player3() )
     def changed(self, key):
@@ -241,18 +241,14 @@ class Title(GameBase):
 
 #--------------------------------------
 class Event(GameBase):
-    EVENT_OPENING, EVENT_TOWN_TALK, EVENT_MAOU_BEGIN, EVENT_MAOU_END, EVENT_ENDING = range(5)
     def __init__(self, event_state):
         self.game_state = [GameBase.EVENT]
-        self.event_state = event_state
         self.end_event = False
         self.turn = 0
-        storys_list = [ [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」",u"王様「武器と防具を与えよう」",u"王様「まずは次の町に向かうのじゃ」"],
-                             [u"「次は魔王城だよ」"],
-                             [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"],
-                             [u"魔王「ぐふ」"],
-                             [] ]
-        self.storys = storys_list[event_state]
+        #
+        e = create_event.create(event_state)
+        self.storys = e.storys
+        self.action = e.action
     def message(self):
         return self.storys[self.turn]
     def draw(self):
@@ -263,22 +259,8 @@ class Event(GameBase):
         if len(self.storys) == self.turn:
             self.end_event = True
         if self.end_event == True:
-            global game
-            if   self.event_state == Event.EVENT_OPENING:
-                party.add_item(create_item.create(CI.WEPON, CI.CLUB))
-                party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
-                party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
-                game = game_stack.pop()
-            elif self.event_state == Event.EVENT_TOWN_TALK:
-                game = game_stack.pop()
-            elif self.event_state == Event.EVENT_MAOU_BEGIN:
-                boss = GroupEnemy(create_boss())
-                boss.set_event(Event.EVENT_MAOU_END)
-                update_buffer.append( u"%s が現れた" % (boss.get_name()) )
-                game_stack.append(Town(Town.MAOU))
-                game = Battle(boss)
-            elif self.event_state == Event.EVENT_MAOU_END:
-                game = Ending()
+            if self.action is not None:
+                self.action()
     def changed(self, key):
         if key == ENTER:
             pass
@@ -555,23 +537,29 @@ def dice(n, m):
     return s
 
 def calc_damage_def(enemy, player):
-    damage = enemy.attack ** 1.5 - (player.defense + player.get_armor_value())
-    if player.is_defense:
-        damage /= 3
+    attack = enemy.attack
+    defense =(player.defense + player.get_armor().value)
+    damage = attack  - defense
     if damage < 0:
         damage = 0
+        damage += attack / 4
+    if player.is_defense:
+        damage /= 3
     return damage
 
 def calc_damage_atk(player, enemy):
-    atk = player.attack + player.get_wepon_value()
-    damage = atk  - (enemy.defense)
+    attack  = player.attack + player.get_wepon().value
+    defense = enemy.defense
+    damage = attack  - defense
     if damage < 0:
         damage = 0
+        damage += attack / 4
     return damage
 
 def calc_damage_atk_magic(player, magic, enemy):
-    atk = magic.attack + player.magic_attack
-    damage = atk  - (enemy.defense)
+    attack = magic.attack + player.magic_attack
+    defense = 0
+    damage = attack  - defense
     if damage < 0:
         damage = 0
     return damage
@@ -583,7 +571,7 @@ class Battle(GameBase):
         self.enemys = enemys
         #
         self.subgame = None
-        self.subgames = [BattleFightParty4, BattleEscape]
+        self.subgames = [BattleFightParty, BattleEscape]
         self.select = Battle.FIGHT
         self.selects = [u"戦う",u"逃げる"]
         self.turn = 0
@@ -621,7 +609,7 @@ class Battle(GameBase):
             if to_none == True:
                 self.subgame = None
 
-class BattleFightParty4(SubGame):
+class BattleFightParty(SubGame):
     ATTACK, MAGIC, DEFFENSE = range(3)
     def __init__(self, enemys, depth):
         SubGame.__init__(self, depth)
@@ -653,7 +641,7 @@ class BattleFightParty4(SubGame):
                         self.enemys.receive(player)
                     elif self.each_select[i] == self.MAGIC:
                         magic_select = self.each_select_magic[i]
-                        self.enemys.receive_magick(player, player.magic_list[magic_select])
+                        self.enemys.receive_magic(player, player.magic_list[magic_select])
                     elif self.each_select[i] == self.DEFFENSE:
                         player.do_defense()
                         update_buffer.append( u"%s は 防御した" % player.name )
@@ -678,10 +666,26 @@ class BattleFightParty4(SubGame):
                 game = Event(self.enemys.event)
             return True
         return False
+    def minus(self, select):
+        while True:
+            select -= 1
+            if select == -1:
+                break
+            if party.group[select].is_living():
+                break
+        return select
+    def plus(self, select):
+        while True:
+            select += 1
+            if select == len(party.group):
+                break
+            if party.group[select].is_living():
+                break
+        return select
     def sub_changed(self, key):
         if key == CANCEL:
             self.each_is_magic[self.player_select] = False
-            self.player_select -= 1
+            self.player_select = self.minus(self.select)
             if self.player_select == -1:
                 return True
         if self.each_is_magic[self.player_select]:
@@ -690,7 +694,7 @@ class BattleFightParty4(SubGame):
             elif key == UP:
                 self.each_select_magic[self.player_select] = back_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_selects()))
             elif key == ENTER:
-                self.player_select += 1
+                self.player_select = self.plus(self.player_select)
                 if self.player_select == len(party.group):
                     self.is_all_action = True
             return False
@@ -702,228 +706,10 @@ class BattleFightParty4(SubGame):
             if self.each_select[self.player_select] == self.MAGIC:
                 self.each_is_magic[self.player_select] = True
             else:
-                self.player_select += 1
+                self.player_select = self.plus(self.player_select)
                 if self.player_select == len(party.group):
                     self.is_all_action = True
         return False
-
-# class BattleFightParty3():
-#     def __init__(self, enemys, depth):
-#         self.enemys = enemys
-#         self.depth = depth
-#         self.is_action = False
-#     def draw(self):
-#         for p in party.group:
-#             if p.is_living():
-#                 p.battle_show()
-#     def sub_battle_update(self):
-#         if self.is_action:
-#             for p in party.group:
-#                 if p.is_living():
-#                     p.action()
-#                     if self.check():
-#                         return
-#             self.is_action = 0
-#             self.select = 0
-#             return False,False
-#         return True,False
-#     def check(self):
-#         if self.enemys.is_living() == False:
-#             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
-#             party.add_exp(self.enemys.get_exp())
-#             party.add_money(self.enemys.get_money())
-#             global game
-#             if self.enemys.event is None:
-#                 game = game_stack.pop()
-#             else:
-#                 game = Event(self.enemys.event)
-#             return True
-#         return False
-#     def sub_changed(self, key):
-#         ret = party.changed(key)
-#         if ret == True:
-#             self.is_action = True
-#
-# class BattleFightParty2():
-#     def __init__(self, enemys, depth):
-#         self.enemys = enemys
-#         self.depth = depth
-#         self.select = 0
-#         self.livelist = party.livinglist()
-#         self.subgame_list = []
-#         for i in range(len(self.livelist)):
-#             self.subgame_list.append(BattleFightPlayer2( party.group[i],self.enemys, depth+1) )
-#         self.is_action = False
-#     def draw(self):
-#         for i in range(len(self.livelist)):
-#             if party.group[i].is_living:
-#                 self.subgame_list[i].draw()
-#                 if i == self.select:
-#                     break
-#     def sub_battle_update(self):
-#         if self.is_action:
-#             for i in range(len(self.livelist)):
-#                 if party.group[i].is_living:
-#                     self.subgame_list[i].sub_battle_update()
-#                     if self.check():
-#                         return True, True
-#                     if i == self.select:
-#                         break
-#             self.is_action = 0
-#             self.select = 0
-#             return False,False
-#         return True,False
-#     def check(self):
-#         if self.enemys.is_living() == False:
-#             update_buffer.append( u"%s を倒した" % (self.enemys.get_name()) )
-#             party.add_exp(self.enemys.get_exp())
-#             party.add_money(self.enemys.get_money())
-#             global game
-#             if self.enemys.event is None:
-#                 game = game_stack.pop()
-#             else:
-#                 game = Event(self.enemys.event)
-#             return True
-#         return False
-#     def sub_changed(self, key):
-#         ret = self.subgame_list[self.select].sub_changed(key)
-#         if ret == 1:
-#             self.select += 1
-#             if self.select == len(self.livelist):
-#                 self.is_action = True
-#         if ret == 2:
-#             self.select -= 1
-#             if self.select == -1:
-#                 return True
-#         return None
-#
-# class BattleFightPlayer2():
-#     ATTACK, MAGIC, DEFFENSE = range(3)
-#     def __init__(self, player, enemys, depth):
-#         self.player = player
-#         self.enemys = enemys
-#         self.depth = depth
-#         #
-#         self.select = 0
-#         self.selects = [u"攻撃", u"呪文", u"防御"]
-#         #
-#         self.subgame = None
-#         self.subgames = [FightPlayerAttack, FightPlayerMagic, FightPlayerDefese]
-#     def draw(self):
-#         head = " " * self.depth * 2
-#         draw_buffer.append( head + "--------" )
-#         draw_select(self.select, self.selects, self.depth)
-#     def sub_battle_update(self):
-#         if self.subgame is not None:
-#             self.subgame()
-#             self.subgame = None
-#             return False, False
-#         return True, False
-#     def sub_changed(self, key):
-#         if self.subgame is None:
-#             if key == DOWN:
-#                 self.select = forward_select(self.select, len(self.selects))
-#             elif key == UP:
-#                 self.select = back_select(self.select, len(self.selects))
-#             elif key == ENTER:
-#                 self.subgame = self.subgames[self.select](self.player, self.enemys, self.depth + 1)
-#                 return 1
-#             elif key == CANCEL:
-#                 return 2
-#         else:
-#             return self.subgame.sub_changed(key)
-#         return 0
-
-class BattleFightPlayer4():
-    def __init__(self, player, enemys, depth):
-        self.player = player
-        self.enemys = enemys
-        self.depth = depth
-        #
-        self.select = 0
-        self.selects = [u"攻撃", u"呪文", u"防御"]
-        #
-        self.subgame = None
-        self.subgames = [FightPlayerAttack, FightPlayerMagic, FightPlayerDefese]
-    def draw(self):
-        head = " " * self.depth * 2
-    def sub_battle_update(self):
-        self.subgame.sub_battle_update()
-        self.subgame = None
-        return False, False
-#         if self.subgame is not None:
-#             self.subgame.sub_battle_update()
-#             self.subgame = None
-#             return False, False
-#         return True, False
-    def sub_changed(self, key):
-        if self.subgame is None:
-            if key == DOWN:
-                self.select = forward_select(self.select, len(self.selects))
-            elif key == UP:
-                self.select = back_select(self.select, len(self.selects))
-            elif key == ENTER:
-                self.subgame = self.subgames[self.select](self.player, self.enemys, self.depth + 1)
-        else:
-            return self.subgame.sub_changed(key)
-        return 0
-
-class BaseFightPlayer(object):
-    def __init__(self, player, enemys, depth):
-        self.player = player
-        self.enemys = enemys
-        self.depth = depth
-    def draw(self):
-        head = " " * self.depth * 2
-        draw_buffer.append( head + "--------" )
-    def sub_battle_update(self):
-        self.action()
-    def sub_changed(self, key):
-        return 1
-
-class FightPlayerAttack(BaseFightPlayer):
-    def __init__(self, player, enemys, depth):
-        super(FightPlayerAttack, self).__init__(player, enemys, depth)
-        self.action = self.attack
-    def attack(self):
-        self.enemys.receive(self.player)
-
-class FightPlayerMagic(BaseFightPlayer):
-    def __init__(self, player, enemys, depth):
-        super(FightPlayerMagic, self).__init__(player, enemys, depth)
-#         self.subgame = None
-#         self.subgames = player.magic_list()
-        self.select = 0
-        self.selects = player.get_magic_selects()
-        self.action = None
-#         self.magic = None
-    def sub_battle_update(self):
-        if self.action is not None:
-            self.action()
-            self.action = None
-            self.select = 0
-    def sub_changed(self, key):
-        if key == DOWN:
-            self.select = forward_select(self.select, len(self.selects))
-        elif key == UP:
-            self.select = back_select(self.select, len(self.selects))
-        elif key == ENTER:
-#             self.magic = player.magic_list[self.select]
-            self.action = self.do_magic
-            return 1
-        elif key == CANCEL:
-            return 2
-        return 0
-    def do_magic(self):
-        self.enemys.receive_magick(self.player, self.player.magic_list[self.select])
-
-class FightPlayerDefese(BaseFightPlayer):
-    def __init__(self, player, enemys, depth):
-        super(FightPlayerDefese, self).__init__(player, enemys, depth)
-        self.action = self.defense
-    def defense(self):
-        self.player.do_defense()
-        update_buffer.append( u"%s は 防御した" % self.player.name )
 
 class BattleEscape():
     def __init__(self, enemys, depth):
@@ -987,9 +773,18 @@ class GroupEnemy(Group):
                 update_buffer.append( u"%s の攻撃" % (e.name) )
                 select = party.rand_select()
                 damage = calc_damage_def(e, party.group[select])
+                party.receive_damage(damage)
                 update_buffer.append( u"%s に %3d" % (party.get_name(), damage) )
-                party.group[select].receive_damage(damage)
-    def receive_magick(self, player, magic):
+                if party.is_living() == False:
+                    st = u"%s たちは 倒れた" % (party.get_name())
+                    update_buffer.append(st)
+                    global game
+                    global game_stack
+                    del game_stack[:]
+                    game = Title()
+                    party.recover()
+                    break
+    def receive_magic(self, player, magic):
         llist = self.livinglist()
         r = sum(llist) - 1
         e = self.group[r]
@@ -1000,6 +795,7 @@ class GroupEnemy(Group):
             update_buffer.append( u"%s に %3d" % (e.name, damage) )
             e.receive_damage(damage)
         else:
+            player.mp = 0
             update_buffer.append( u"呪文は失敗した" )
     def receive(self, player):
         llist = self.livinglist()
@@ -1105,16 +901,19 @@ class Party(Group):
     def recover(self):
         for e in self.group:
             e.recover()
-#     def receive_damage(self, damage):
-#         self.hp  -= damage
-#         if self.is_living():
-#             st = u"%s たちは 倒れた" % (self.group[0].name)
-#             update_buffer.append(st)
-#             global game
-#             global game_stack
-#             del game_stack[:]
-#             game = Title()
-#             self.recover()
+    def receive_damage(self, damage):
+        llist = self.livinglist()
+        r = random.randint(0, sum(llist)-1)
+        select = 0
+        for i in range(len(self.group)):
+            if llist[i] == 1:
+                if select == r:
+                    select = i
+                    break
+                select += 1
+        p = self.group[select]
+        p.receive_damage(damage)
+        self.select = select
 
 class Magic(object):
     def __init__ (self, name, mp=0, attack=0):
@@ -1192,6 +991,7 @@ class Player(Character):
             names.append(m.name)
         return names
     def show_death(self, depth):
+        head = " " * depth * 2
         draw_buffer.append( head +  u"%s Death" % ( self.name ) )
     def show(self, depth):
         head = " " * depth * 2
@@ -1205,11 +1005,11 @@ class Player(Character):
                     armor = create_item.create(CI.ARMOR, 0)
                 else:
                     armor = self.armor
-                draw_buffer.append( head + u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense) )
+                draw_buffer.append( head + u"%s Lv:%3d HP %4d/%4d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense) )
                 draw_buffer.append( head + u"        %s %+3d %s %+3d" % (wepon.name, wepon.value, armor.name, armor.value) )
                 draw_buffer.append( head + u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp)) )
         if game.game_state[0] == GameBase.BATTLE:
-            draw_buffer.append( head +  u"%s HP %3d/%3d  MP %3d/%3d" % ( self.name2, self.hp, self.max_hp, self.mp, self.max_mp) )
+            draw_buffer.append( head +  u"%s HP %4d/%4d  MP %4d/%4d" % ( self.name2, self.hp, self.max_hp, self.mp, self.max_mp) )
     def str_equipment(self, equipment):
         if equipment == CI.WEPON:
             return self.get_wepon().name
@@ -1268,14 +1068,6 @@ class Player(Character):
             update_buffer.append(st)
     def receive_damage(self, damage):
         self.hp  -= damage
-        if self.hp <= 0:
-            st = u"%s は 倒れた" % (self.name)
-            update_buffer.append(st)
-            global game
-            global game_stack
-            del game_stack[:]
-            game = Title()
-            self.recover()
     def recover(self):
         self.hp = self.max_hp
         self.mp = self.max_mp
@@ -1332,6 +1124,53 @@ create_item = CreateItem()
 
 #------------------------------------------------------------------------------
 # Data
+def opening_action():
+    global game
+    party.add_item(create_item.create(CI.WEPON, CI.CLUB))
+    party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
+    party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
+    game = game_stack.pop()
+
+def town_talk_action():
+    global game
+    game = game_stack.pop()
+
+def maou_begin_action():
+    global game
+    boss = GroupEnemy(create_boss())
+    boss.set_event(CE.MAOU_END)
+    update_buffer.append( u"%s が現れた" % (boss.get_name()) )
+    game_stack.append(Town(Town.MAOU))
+    game = Battle(boss)
+
+def maou_end_action():
+    global game
+    game = Ending()
+
+class CE():
+    OPENING, TOWN_TALK, MAOU_BEGIN, MAOU_END, ENDING = range(5)
+    def __init__(self, storys, action):
+        self.storys = storys
+        self.action = action
+
+
+class CreateEvent():
+    def __init__(self):
+        self.elements = []
+        s = [u"王様「勇者よ」",u"王様「この世界は魔王に侵略されておる」",u"王様「魔王を倒してくれ」",u"王様「武器と防具を与えよう」",u"王様「まずは次の町に向かうのじゃ」"]
+        self.elements.append( CE(s, opening_action) )
+        s = [u"「次は魔王城だよ」"]
+        self.elements.append( CE(s, town_talk_action) )
+        s = [u"魔王「よく来たな勇者よ」", u"魔王「ここがお前の墓場だ」"]
+        self.elements.append( CE(s, maou_begin_action) )
+        s = [u"魔王「ぐふ」"],
+        self.elements.append( CE(s, maou_end_action) )
+#         self.elements.append( CE([], None) )
+    def create(self, state):
+        return self.elements[state]
+
+create_event = CreateEvent()
+
 class CreateTownAction():
     TALK, SLEEP, SLEEP2, MENU, BACK, NEXT, FIGHT = range(7)
     selects_dict = { TALK:u"話す", SLEEP:u"泊まる", SLEEP2:u"回復ポイント", MENU:u"メニューを開く", BACK:u"戻る", NEXT:u"出発する", FIGHT:u"戦う" }
@@ -1376,7 +1215,7 @@ def town_1_action(select):
     global game
     if   select == TALK:
         game_stack.append(game)
-        game = Event(Event.EVENT_TOWN_TALK)
+        game = Event(CE.TOWN_TALK)
     elif select == SLEEP:
         party.recover()
         update_buffer.append(u"全回復した")
@@ -1403,7 +1242,7 @@ def maou_action(select):
     elif select == BACK:
         game = Field(Field.MOUNTAIN_1, True)
     elif select == FIGHT:
-        game = Event(Event.EVENT_MAOU_BEGIN)
+        game = Event(CE.MAOU_BEGIN)
     return False
 
 class CreateTown():
@@ -1476,24 +1315,24 @@ class RandomEnemys():
         return False
 
 def create_boss():
-    boss = Enemy(u"魔王", 300, 10, 10, 1000, 1000)
+    boss = Enemy(u"魔王", 3000, 100, 100, 1000, 1000)
     return boss
 
 def create_common(name):
-    enemy = Enemy(u"スライム"+name, 30, 5, 5, 10, 5)
+    enemy = Enemy(u"スライム"+name, 300, 50, 50, 10, 5)
     return enemy
 
 def create_player1():
-    player = Player(     u"勇者" , 100 , 10 , 10 , 10 , 4 , 2 , 10, name2=u"勇者    " )
+    player = Player(     u"勇者" , 1000 , 100 , 100 , 10 , 4 , 2 , 10, name2=u"勇者    " )
     return player
 
 def create_player2():
-    player = Player(     u"戦士" , 120 , 7  , 13 , 12 , 3 , 3 , 12, name2=u"戦士    " )
+    player = Player(     u"戦士" , 1200 , 70 , 130 , 12 , 3 , 3 , 12, name2=u"戦士    " )
     return player
 
 def create_player3():
-    m = [Magic(u"炎の呪文", 3, 15), Magic(u"氷の呪文", 2, 10)]
-    player = Player( u"魔法使い"  , 80  , 5  , 5  , 7  , 2 , 1 , 8, name2=u"魔法使い", mp = 20, inc_mp = 4, magic_attack=20, magic_list = m )
+    m = [Magic(u"炎の呪文", 30, 150), Magic(u"氷の呪文", 20, 100)]
+    player = Player( u"魔法使い"  , 800  , 50  , 50  , 7  , 2 , 1 , 8, name2=u"魔法使い", mp = 200, inc_mp = 4, magic_attack=200, magic_list = m )
     return player
 
 #------------------------------------------------------------------------------
