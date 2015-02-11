@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8
-# ver 1.06
+# ver 1.07
 import sys, os, traceback
 import random, time
 import termios, atexit
@@ -265,9 +265,9 @@ class Event(GameBase):
         if self.end_event == True:
             global game
             if   self.event_state == Event.EVENT_OPENING:
-                items =  [Wepon(u"棍棒", 3, 20),Wepon(u"銅剣", 5, 60)]
-                for item in items:
-                    party.add_item(item)
+                party.add_item(create_item.create(CI.WEPON, CI.CLUB))
+                party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
+                party.add_item(create_item.create(CI.WEPON, CI.COPPER_SWORD))
                 game = game_stack.pop()
             elif self.event_state == Event.EVENT_TOWN_TALK:
                 game = game_stack.pop()
@@ -413,15 +413,13 @@ class SMenuStatus():
 
 #----------------------------
 class SMenuEquipment():
-    WEAPON, ARMOR = range(2)
     def __init__(self, depth):
         self.depth = depth
         #
-        self.select = SMenuEquipment.WEAPON
+        self.select = CI.WEPON
         self.selects = [u"武器", u"防具"]
         #
         self.subgame = None
-        self.subgames_common = SEquipmentWeponAromor
         #
         self.player_select = 0
         self.is_pselect = False
@@ -464,10 +462,7 @@ class SMenuEquipment():
                     self.select = back_select(self.select, len(self.selects))
                 elif key == ENTER:
                     player = party.group[party.select]
-                    wepon = [player.wepon] + party.get_wepons()
-                    armor = [player.armor] + party.get_armors()
-                    arg = [wepon, armor]
-                    self.subgame = self.subgames_common(self.depth+1, arg[self.select])
+                    self.subgame = SEquipmentWeponAromor(player, self.select, self.depth+1)
             else:
                 to_none = self.subgame.sub_changed(key)
                 if to_none == True:
@@ -482,11 +477,23 @@ def create_sub_selects(equipment):
         sub_selects.append(s)
     return sub_selects
 
+def get_equipments(player, wa_select):
+    player_equip = player.wepon
+    if wa_select == 0:
+        equipments = [player.get_wepon()] + party.get_wepons()
+#         if equipments[0].identify != CI.NONE:
+#             equipments += [create_item.create_wepon(CI.REMOVE)]
+    else:
+        equipments = [player.get_armor()] + party.get_armors()
+    return equipments
+
 class SEquipmentWeponAromor(SubGame):
-    def __init__(self, depth, equipment):
-        self.equipment = equipment
+    def __init__(self, player, wa_select, depth):
+        self.player = player
+        self.wa_select = wa_select
+        equipment = get_equipments(self.player, self.wa_select)
+        self.sub_selects = create_sub_selects(equipment)
         self.sub_select = 0
-        self.sub_selects = create_sub_selects(self.equipment)
         self.depth = depth
         self.is_action = False
     def draw(self):
@@ -500,7 +507,8 @@ class SEquipmentWeponAromor(SubGame):
             self.is_action = False
             is_change = party.change_item(0, self.sub_select)
             if is_change:
-                self.sub_selects = create_sub_selects(self.equipment)
+                equipment = get_equipments(self.player, self.wa_select)
+                self.sub_selects = create_sub_selects(equipment)
     def sub_changed(self, key):
         if   key == RIGHT:
             self.sub_select = forward_select(self.sub_select, len(self.sub_selects))
@@ -547,7 +555,7 @@ def dice(n, m):
     return s
 
 def calc_damage_def(enemy, player):
-    damage = enemy.attack ** 1.5 - (player.defense + player.armor[0].value)
+    damage = enemy.attack ** 1.5 - (player.defense + player.get_armor_value())
     if player.is_defense:
         damage /= 3
     if damage < 0:
@@ -555,7 +563,7 @@ def calc_damage_def(enemy, player):
     return damage
 
 def calc_damage_atk(player, enemy):
-    atk = player.attack + player.wepon[0].value
+    atk = player.attack + player.get_wepon_value()
     damage = atk  - (enemy.defense)
     if damage < 0:
         damage = 0
@@ -633,7 +641,7 @@ class BattleFightParty4(SubGame):
                 draw_buffer.append( head + party.group[i].name)
                 draw_select(self.each_select[i], self.each_selects, self.depth)
                 if self.each_is_magic[i]:
-                    draw_select(self.each_select_magic[i] , player.get_magic_list(), self.depth+1)
+                    draw_select(self.each_select_magic[i] , player.get_magic_selects(), self.depth+1)
                 if i == self.player_select:
                     break
     def sub_battle_update(self):
@@ -678,9 +686,9 @@ class BattleFightParty4(SubGame):
                 return True
         if self.each_is_magic[self.player_select]:
             if key == DOWN:
-                self.each_select_magic[self.player_select] = forward_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_list()))
+                self.each_select_magic[self.player_select] = forward_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_selects()))
             elif key == UP:
-                self.each_select_magic[self.player_select] = back_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_list()))
+                self.each_select_magic[self.player_select] = back_select(self.each_select_magic[self.player_select], len(party.group[self.player_select].get_magic_selects()))
             elif key == ENTER:
                 self.player_select += 1
                 if self.player_select == len(party.group):
@@ -886,7 +894,7 @@ class FightPlayerMagic(BaseFightPlayer):
 #         self.subgame = None
 #         self.subgames = player.magic_list()
         self.select = 0
-        self.selects = player.get_magic_list()
+        self.selects = player.get_magic_selects()
         self.action = None
 #         self.magic = None
     def sub_battle_update(self):
@@ -1150,7 +1158,7 @@ class Enemy(Character):
         self.hp -= damage
 
 class Player(Character):
-    def __init__ (self, name, hp, attack, defense, inc_hp, inc_attack, inc_defense, inc_exp, name2, mp=0, inc_mp=0, magic_attack=0, magic_list=[ Magic(u"なし")]):
+    def __init__ (self, name, hp, attack, defense, inc_hp, inc_attack, inc_defense, inc_exp, name2, mp=0, inc_mp=0, magic_attack=0, magic_list=None):
         Character.__init__(self, name, hp, attack, defense)
         self.inc_attack = inc_attack
         self.inc_defense = inc_defense
@@ -1159,8 +1167,8 @@ class Player(Character):
         self.lv = 1
         self.next_exp = self.lv * self.inc_exp
         self.inc_hp = inc_hp
-        self.wepon = Wepon(u"なし",0, 0)
-        self.armor = Armor(u"なし",0, 0)
+        self.wepon = None
+        self.armor = None
         self.escape_value = 0.5
         self.name2 = name2
         #
@@ -1168,7 +1176,17 @@ class Player(Character):
         self.max_mp = mp
         self.magic_attack = magic_attack
         self.magic_list = magic_list
-    def get_magic_list(self):
+    def get_wepon(self):
+        if self.wepon is not None:
+            return self.wepon
+        return create_item.create_wepon( 0 )
+    def get_armor(self):
+        if self.armor is not None:
+            return self.armor
+        return create_item.create_armor( 0 )
+    def get_magic_selects(self):
+        if self.magic_list is None:
+            return [ u"なし"]
         names = []
         for m in self.magic_list:
             names.append(m.name)
@@ -1179,16 +1197,24 @@ class Player(Character):
         head = " " * depth * 2
         if game.game_state[0] == GameBase.MENU:
             if game.game_state[1] == Menu.STATUS:
+                if self.wepon is None:
+                    wepon = create_item.create(CI.WEPON, 0)
+                else:
+                    wepon = self.wepon
+                if self.armor is None:
+                    armor = create_item.create(CI.ARMOR, 0)
+                else:
+                    armor = self.armor
                 draw_buffer.append( head + u"%s Lv:%3d HP %3d/%3d ATK %3d DEF %3d" % ( self.name, self.lv,  self.hp, self.max_hp, self.attack, self.defense) )
-                draw_buffer.append( head + u"        %s %+3d %s %+3d" % (self.wepon.name, self.wepon.value, self.armor.name, self.armor.value) )
+                draw_buffer.append( head + u"        %s %+3d %s %+3d" % (wepon.name, wepon.value, armor.name, armor.value) )
                 draw_buffer.append( head + u"        Exp %3d 次のレベルまで あと %-3d" % ( self.exp, (self.next_exp - self.exp)) )
         if game.game_state[0] == GameBase.BATTLE:
             draw_buffer.append( head +  u"%s HP %3d/%3d  MP %3d/%3d" % ( self.name2, self.hp, self.max_hp, self.mp, self.max_mp) )
     def str_equipment(self, equipment):
-        if equipment == SMenuEquipment.WEAPON:
-            return self.wepon.name
-        elif equipment == SMenuEquipment.ARMOR:
-            return self.armor.name
+        if equipment == CI.WEPON:
+            return self.get_wepon().name
+        elif equipment == CI.ARMOR:
+            return self.get_armor().name
         return ""
     def add_item(self, item):
         # あとでソートを入れる
@@ -1207,15 +1233,21 @@ class Player(Character):
     def change_item(self, select_type, select_num):
         if select_num != 0:
             select_num -= 1
-            if select_type == SMenuEquipment.WEAPON:
+            if select_type == CI.WEPON:
                 wepons = party.get_wepons()
-                self.wepon.is_equip = False
-#                 wepons[select_num].is_equip = True
-                self.wepon = wepons[select_num]
-                self.wepon.is_equip = True
-                st = self.wepon.name  + u"を装備した"
-                update_buffer.append(st)
-            elif select_type == SMenuEquipment.Armor:
+                if self.wepon is not None:
+                    self.wepon.is_equip = False
+                    st = self.wepon.name  + u"をはずした"
+                    self.wepon = wepons[select_num]
+                    self.wepon.is_equip = True
+                    st = self.wepon.name  + u"を装備した"
+                    update_buffer.append(st)
+                else:
+                    self.wepon = wepons[select_num]
+                    self.wepon.is_equip = True
+                    st = self.wepon.name  + u"を装備した"
+                    update_buffer.append(st)
+            elif select_type == CI.Armor:
                 armors = party.get_armors()
                 self.armor = armors[select_num]
                 st = self.armor.name + u"を装備した"
@@ -1249,24 +1281,54 @@ class Player(Character):
         self.mp = self.max_mp
 
 #--------------------------------------
-class Item():
-    def __init__ (self, name, value, price):
+class Item(object):
+    def __init__ (self, identify, name, value, price):
+        self.identify = identify
         self.name = name
         self.value = value
         self.price = price
         self.is_equip = False
+        self.itype = -1
     def show(self):
         pass
     def get_value(self):
         pass
 
 class Wepon(Item):
-    def __init__ (self, name, attack, price):
-        Item.__init__(self, name, attack, price)
+    def __init__ (self, identify, name, value, price):
+        Item.__init__(self, identify, name, value, price)
+        self.itype = 0
 
 class Armor(Item):
-    def __init__ (self, name, defense, price):
-        Item.__init__(self, name, defense, price)
+    def __init__ (self, identify, name, value, price):
+        Item.__init__(self, identify, name, value, price)
+        self.itype = 1
+
+class CI():
+    WEPON, ARMOR = range(2)
+    NONE, REMOVE = range(2)
+    CLUB, COPPER_SWORD, IRON_SWORD = range(2,5)
+    LEATHER_ARMOR, COPPER_ARMOR = range(2,4)
+
+class CreateItem(Item):
+    def __init__ (self):
+        self.wepon_data = [[u"なし", 0, 0], [u"外す", 0, 0],
+                [u"棍棒", 3, 20], [u"銅の剣", 5, 60], [u"鉄の剣", 15, 150]]
+        self.armor_data = [[u"なし", 0, 0], [u"外す", 0, 0],
+                    [u"革の鎧", 3, 20],[u"銅の鎧", 5, 60]]
+    def create(self, itype, identify):
+        if itype == CI.WEPON:
+            a = [identify]+self.wepon_data[identify]
+            return Wepon(*a)
+        else:
+            a = [identify]+self.armor_data[identify]
+            return Armor(*a)
+    def create_wepon(self, identify):
+        return self.create(CI.WEPON, identify)
+    def create_armor(self, identify):
+        return self.create(CI.ARMOR, identify)
+
+create_item = CreateItem()
 
 #------------------------------------------------------------------------------
 # Data
