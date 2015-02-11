@@ -1383,6 +1383,12 @@ class PyRPG:
             self.os_system.print_buffer(update_buffer)
             update_buffer = []
             self.os_system.wait()
+        while True:
+            if len(update_buffer) == 0:
+                break
+            buf = update_buffer.pop(0)
+            self.os_system.print_buffer(buf)
+            self.os_system.wait()
     def check_event(self):
         key = self.os_system.get_key()
         if key == FINISH:
