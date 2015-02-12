@@ -53,16 +53,6 @@ if os.name == "nt":
                         if c in corsors:
                             ch = corsors[c]
                     return ch
-        def get_key(self):
-            key = -1
-            key_dict = { ord("h"):LEFT, ord("j"):DOWN, ord("k"):UP,ord("l"):RIGHT, ord("a"):ENTER, ord("x"):CANCEL, ord("z"):ENTER, ord("c"):CANCEL, 13:ENTER }
-            raw_ch = get_input()
-            raw_ord = ord(raw_ch)
-            if raw_ord in key_dict:
-                key = key_dict[raw_ord]
-            elif raw_ord == ord("Q"):
-                key = FINISH
-            return key
 else:
     class GameInput(BaseGameInput):
         def __init__(self):
@@ -238,7 +228,6 @@ class Title(GameBase):
             elif self.select == Title.EXIT:
                 global is_loop
                 is_loop = False
-
 #--------------------------------------
 class Event(GameBase):
     def __init__(self, event_state):
@@ -266,6 +255,21 @@ class Event(GameBase):
             pass
 
 #--------------------------------------
+class TownTalk():
+    def __init__(self, event_state):
+        e = create_event.create(event_state)
+        self.storys = e.storys
+        self.action = e.action
+        for s in e.storys:
+            update_buffer.append(s)
+    def draw(self):
+        pass
+    def update(self):
+        pass
+    def changed(self, key):
+        pass
+
+#--------------------------------------
 class Town(GameBase):
     KINGDOM, TOWN_1, MAOU = range(3)
     def __init__(self, town_state):
@@ -278,20 +282,33 @@ class Town(GameBase):
         self.name = e[CreateTown.NAME]
         self.selects = e[CreateTown.SELECTS]
         self.action = e[CreateTown.ACTION]
+        #
+        self.subgame = None
     def draw(self):
         draw_buffer.append(u"== %s ==" % (self.name))
         draw_select(self.select, self.selects)
+        if self.subgame is not None:
+            to_none = self.subgame.draw()
     def update(self):
-        if self.is_action:
-            self.is_action = False
-            self.action(self.select)
+        if self.subgame is not None:
+            self.subgame.sub_update()
+        else:
+            if self.is_action:
+                self.is_action = False
+                self.action(self.select)
     def changed(self, key):
-        if   key == DOWN:
-            self.select = forward_select(self.select, len(self.selects))
-        elif key == UP:
-            self.select = back_select(self.select, len(self.selects))
-        elif key == ENTER:
-            self.is_action = True
+        if self.subgame is not None:
+            to_none = self.subgame.sub_changed(key)
+            if to_none == True:
+                self.game_state.pop()
+                self.subgame = None
+        else:
+            if   key == DOWN:
+                self.select = forward_select(self.select, len(self.selects))
+            elif key == UP:
+                self.select = back_select(self.select, len(self.selects))
+            elif key == ENTER:
+                self.is_action = True
 
 #--------------------------------------
 class Field(GameBase):
@@ -685,7 +702,7 @@ class BattleFightParty(SubGame):
     def sub_changed(self, key):
         if key == CANCEL:
             self.each_is_magic[self.player_select] = False
-            self.player_select = self.minus(self.select)
+            self.player_select = self.minus(self.player_select)
             if self.player_select == -1:
                 return True
         if self.each_is_magic[self.player_select]:
@@ -1096,32 +1113,6 @@ class Armor(Item):
         Item.__init__(self, identify, name, value, price)
         self.itype = 1
 
-class CI():
-    WEPON, ARMOR = range(2)
-    NONE, REMOVE = range(2)
-    CLUB, COPPER_SWORD, IRON_SWORD = range(2,5)
-    LEATHER_ARMOR, COPPER_ARMOR = range(2,4)
-
-class CreateItem(Item):
-    def __init__ (self):
-        self.wepon_data = [[u"なし", 0, 0], [u"外す", 0, 0],
-                [u"棍棒", 3, 20], [u"銅の剣", 5, 60], [u"鉄の剣", 15, 150]]
-        self.armor_data = [[u"なし", 0, 0], [u"外す", 0, 0],
-                    [u"革の鎧", 3, 20],[u"銅の鎧", 5, 60]]
-    def create(self, itype, identify):
-        if itype == CI.WEPON:
-            a = [identify]+self.wepon_data[identify]
-            return Wepon(*a)
-        else:
-            a = [identify]+self.armor_data[identify]
-            return Armor(*a)
-    def create_wepon(self, identify):
-        return self.create(CI.WEPON, identify)
-    def create_armor(self, identify):
-        return self.create(CI.ARMOR, identify)
-
-create_item = CreateItem()
-
 #------------------------------------------------------------------------------
 # Data
 def opening_action():
@@ -1153,7 +1144,6 @@ class CE():
         self.storys = storys
         self.action = action
 
-
 class CreateEvent():
     def __init__(self):
         self.elements = []
@@ -1171,6 +1161,7 @@ class CreateEvent():
 
 create_event = CreateEvent()
 
+#--------------------------------------
 class CreateTownAction():
     TALK, SLEEP, SLEEP2, MENU, BACK, NEXT, FIGHT = range(7)
     selects_dict = { TALK:u"話す", SLEEP:u"泊まる", SLEEP2:u"回復ポイント", MENU:u"メニューを開く", BACK:u"戻る", NEXT:u"出発する", FIGHT:u"戦う" }
@@ -1211,11 +1202,30 @@ def kingdom_action(select):
     return False
 
 def town_1_action(select):
-    TALK, SLEEP, MENU, BACK, NEXT = range(5)
+    TALK, TALK2, SLEEP, MENU, BACK, NEXT = range(6)
     global game
     if   select == TALK:
         game_stack.append(game)
         game = Event(CE.TOWN_TALK)
+    elif select == TALK2:
+        st = u"「次は」"
+        update_buffer.append(st)
+        st = u"「魔王城」"
+        update_buffer.append(st)
+        st = u"「です」"
+        update_buffer.append(st)
+        st = u"「次は」"
+        update_buffer.append(st)
+        st = u"「魔王城」"
+        update_buffer.append(st)
+        st = u"「です」"
+        update_buffer.append(st)
+        st = u"「次は」"
+        update_buffer.append(st)
+        st = u"「魔王城」"
+        update_buffer.append(st)
+        st = u"「です」"
+        update_buffer.append(st)
     elif select == SLEEP:
         party.recover()
         update_buffer.append(u"全回復した")
@@ -1260,7 +1270,7 @@ class CreateTown():
         #
         state = Town.TOWN_1
         name = u"町"
-        selects = [u"話す", u"泊まる",u"メニューを開く", u"戻る", u"出発する"]
+        selects = [u"話す", u"話す2", u"泊まる",u"メニューを開く", u"戻る", u"出発する"]
         e = [ state, name, selects, town_1_action]
         self.elements.append(e)
         #
@@ -1293,6 +1303,7 @@ class CreateField():
 
 create_field = CreateField()
 
+#--------------------------------------
 class RandomEnemys():
     def __init__(self, encounter, rmax=3):
         self.encounter = encounter
@@ -1335,9 +1346,35 @@ def create_player3():
     player = Player( u"魔法使い"  , 800  , 50  , 50  , 7  , 2 , 1 , 8, name2=u"魔法使い", mp = 200, inc_mp = 4, magic_attack=200, magic_list = m )
     return player
 
+#--------------------------------------
+class CI():
+    WEPON, ARMOR = range(2)
+    NONE, REMOVE = range(2)
+    CLUB, COPPER_SWORD, IRON_SWORD = range(2,5)
+    LEATHER_ARMOR, COPPER_ARMOR = range(2,4)
+
+class CreateItem(Item):
+    def __init__ (self):
+        self.wepon_data = [[u"なし", 0, 0], [u"外す", 0, 0],
+                [u"棍棒", 3, 20], [u"銅の剣", 5, 60], [u"鉄の剣", 15, 150]]
+        self.armor_data = [[u"なし", 0, 0], [u"外す", 0, 0],
+                    [u"革の鎧", 3, 20],[u"銅の鎧", 5, 60]]
+    def create(self, itype, identify):
+        if itype == CI.WEPON:
+            a = [identify]+self.wepon_data[identify]
+            return Wepon(*a)
+        else:
+            a = [identify]+self.armor_data[identify]
+            return Armor(*a)
+    def create_wepon(self, identify):
+        return self.create(CI.WEPON, identify)
+    def create_armor(self, identify):
+        return self.create(CI.ARMOR, identify)
+
+create_item = CreateItem()
+
 #------------------------------------------------------------------------------
 # Game System 2
-
 class PyRPG:
     def __init__(self):
         global game
@@ -1353,8 +1390,6 @@ class PyRPG:
                 self.os_system.clear()
                 self.draw()
                 self.check_event()
-                self.os_system.clear()
-                self.draw()
                 self.update()
                 global game_turn
                 game_turn += 1
@@ -1373,20 +1408,31 @@ class PyRPG:
         if len(draw_buffer) != 0:
             self.os_system.print_buffer(draw_buffer)
             draw_buffer = []
-    def update(self):
-        """ゲーム状態の更新
-            描画があったら is_draw を True
-        """
+    def update0(self):
+        self.os_system.clear()
+        self.draw()
         game.update()
         global update_buffer
         if len(update_buffer) != 0:
             self.os_system.print_buffer(update_buffer)
             update_buffer = []
             self.os_system.wait()
+    def update(self):
+        """ゲーム状態の更新
+            描画があったら
+        """
+        self.os_system.clear()
+        self.draw()
+        game.update()
+        global update_buffer
         while True:
+            buf = []
             if len(update_buffer) == 0:
                 break
-            buf = update_buffer.pop(0)
+            for i in range(3):
+                if len(update_buffer) == 0:
+                    break
+                buf.append(update_buffer.pop(0))
             self.os_system.print_buffer(buf)
             self.os_system.wait()
     def check_event(self):
@@ -1406,7 +1452,9 @@ game_turn = 0
 is_loop = True
 party = None
 
+# 背景相当
 draw_buffer = []
+# メッセージウィンドウ相当
 update_buffer = []
 
 debug_print = False
@@ -1415,6 +1463,5 @@ debug_print = False
 random.seed(1)
 if __name__ == "__main__":
     PyRPG()
-
 
 #------------------------------------------------------------------------------
